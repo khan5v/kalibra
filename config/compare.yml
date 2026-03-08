@@ -1,0 +1,60 @@
+# AgentFlow checks — metrics and threshold gates.
+#
+# All *.yml files in config/checks/ are merged automatically.
+# Add project-specific files alongside this one (e.g. config/checks/ci.yml).
+#
+# Usage:
+#   agentflow compare --baseline @baseline --current @current
+
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
+#
+# Which comparison metrics to compute. Remove lines to skip specific metrics.
+# Omit this section entirely to run all built-in metrics.
+
+metrics:
+  - success_rate      # success rate delta + two-proportion z-test
+  - per_task          # per-task regression / improvement detection
+  - cost              # average cost per trace
+  - steps             # average steps (spans) per trace
+  - duration          # average and P95 latency
+  - tool_error_rate   # fraction of tool calls that returned an error
+  - path_distribution # Jaccard similarity of top execution paths
+  # - myproject.custom_metrics  # dotted path → module loaded, its METRICS list is run
+
+
+# ── Threshold gates ───────────────────────────────────────────────────────────
+#
+# `agentflow compare` exits with code 1 if any expression evaluates to false.
+# Use this to enforce quality gates in CI.
+#
+# Available fields (populated by the metrics above):
+#   success_rate_delta      — change in success rate (percentage points)
+#   success_rate            — current success rate (0–100)
+#   regressions             — tasks that flipped success → failure
+#   improvements            — tasks that flipped failure → success
+#   cost_delta_pct          — % change in average cost
+#   steps_delta_pct         — % change in average steps
+#   duration_delta_pct      — % change in average duration
+#   duration_p95_delta_pct  — % change in P95 duration
+#   tool_error_rate_delta   — change in tool error rate (percentage points)
+#   path_jaccard            — Jaccard similarity of top paths (0–1)
+
+require: []
+  # - success_rate_delta >= -2      # at most 2 pp success rate drop
+  # - regressions <= 5              # at most 5 task regressions
+  # - cost_delta_pct <= 20          # at most 20% cost increase
+  # - duration_p95_delta_pct <= 30  # at most 30% P95 latency increase
+  # - path_jaccard >= 0.7           # paths must be at least 70% similar
+
+
+# ── Custom metrics ────────────────────────────────────────────────────────────
+#
+# Zero-config: drop `agentflow_metrics.py` in your project root.
+# It is imported automatically — no config entry needed.
+#
+# Or add dotted module paths to the metrics list above (e.g. myproject.custom).
+# Each module may export METRICS: list[ComparisonMetric] to add comparison
+# metrics, or use @agentflow.plugins.register for node-level metrics.
+#
+# See src/agentflow/plugins/builtin.py for reference implementations.

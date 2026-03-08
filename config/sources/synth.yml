@@ -1,0 +1,32 @@
+# AgentFlow source registry — named pull configurations.
+#
+# All *.yml files in config/sources/ are merged automatically.
+# Each top-level key is a source name, referenced as @name in CLI commands:
+#
+#   agentflow pull @current
+#   agentflow compare --baseline @baseline --current @current
+#   agentflow pull @current --refresh          # force re-pull, bypass cache
+#
+# Fields per source:
+#   source:  langfuse | langsmith
+#   project: project name / ID in the trace store
+#   since:   7d, 24h, 30m, or ISO date (2026-01-01)
+#   limit:   max traces to fetch (default: 5000)
+#
+# Cache: always written to cached_sources/<name>.jsonl
+#
+# Environment variables:
+#   Langfuse:   LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
+#   LangSmith:  LANGSMITH_API_KEY
+
+current:
+  source: langfuse
+  project: synth
+  since: 40m
+  limit: 10
+
+baseline:
+  source: langfuse
+  project: synth
+  since: 25m
+  limit: 10
