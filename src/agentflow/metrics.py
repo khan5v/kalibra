@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from agentflow.collection import TraceCollection
+from agentflow.converters.base import span_is_error
 
 # Minimum sample sizes for reliable metric computation.
 _MIN_N = 30       # below this, any metric is suspect
@@ -310,7 +311,7 @@ class ToolErrorRateMetric(ComparisonMetric):
 
     def summarize(self, col: TraceCollection) -> dict:
         spans = [s for t in col.all_traces() for s in t.spans]
-        errors = sum(1 for s in spans if s.status == "error")
+        errors = sum(1 for s in spans if span_is_error(s))
         return {"rate": errors / len(spans) if spans else 0.0,
                 "errors": errors, "total": len(spans)}
 

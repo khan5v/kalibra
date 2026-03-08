@@ -7,7 +7,10 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Generator
 
-from agentflow.converters.base import Span, Trace
+from agentflow.converters.base import (
+    AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_MODEL, GEN_AI_OUTPUT_TOKENS,
+    Trace, make_span,
+)
 
 
 class LangfuseConnector:
@@ -133,19 +136,14 @@ class LangfuseConnector:
 
         if not spans:
             # Create a single synthetic span from trace metadata
-            t0 = _parse_ts(raw.get("timestamp"))
-            spans = [Span(
-                span_id=hashlib.md5(trace_id.encode()).hexdigest()[:16],
-                parent_id=None,
+            t0_ns = int(_parse_ts(raw.get("timestamp")) * 1e9)
+            spans = [make_span(
                 name=raw.get("name", "unknown"),
-                start_time=t0,
-                end_time=t0,
-                attributes={},
-                model=None,
-                input_tokens=0,
-                output_tokens=0,
-                cost=0.0,
-                status="ok",
+                trace_id=trace_id,
+                span_id=hashlib.md5(trace_id.encode()).hexdigest()[:16],
+                parent_span_id=None,
+                start_ns=t0_ns,
+                end_ns=t0_ns,
             )]
 
         return Trace(
@@ -160,7 +158,7 @@ class LangfuseConnector:
             },
         )
 
-    def _obs_to_span(self, trace_id: str, obs: dict) -> Span | None:
+    def _obs_to_span(self, trace_id: str, obs: dict):
         obs_id = obs.get("id", "")
         name = obs.get("name") or obs.get("type", "unknown")
 
@@ -171,29 +169,39 @@ class LangfuseConnector:
         input_tokens = usage.get("input", 0) or 0
         output_tokens = usage.get("output", 0) or 0
         cost = obs.get("calculatedTotalCost") or 0.0
-
         model = obs.get("model") or None
 
         # Error detection
-        status = "ok"
+        is_error = False
         level = obs.get("level", "DEFAULT")
         if level in ("ERROR", "WARNING"):
-            status = "error"
+            is_error = True
         if obs.get("statusMessage") and "error" in str(obs["statusMessage"]).lower():
-            status = "error"
+            is_error = True
 
-        return Span(
-            span_id=hashlib.md5(f"{trace_id}:{obs_id}".encode()).hexdigest()[:16],
-            parent_id=obs.get("parentObservationId"),
+        # Parent span ID: compute the same way as span_id (md5 of trace_id:obs_id)
+        parent_obs_id = obs.get("parentObservationId")
+        parent_span_id = (
+            hashlib.md5(f"{trace_id}:{parent_obs_id}".encode()).hexdigest()[:16]
+            if parent_obs_id else None
+        )
+
+        attrs: dict = {"langfuse_type": obs.get("type", "")}
+        if model:
+            attrs[GEN_AI_MODEL] = model
+        attrs[GEN_AI_INPUT_TOKENS]  = input_tokens
+        attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
+        attrs[AF_COST]              = cost
+
+        return make_span(
             name=name,
-            start_time=t0,
-            end_time=t1,
-            attributes={"langfuse_type": obs.get("type", "")},
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cost=cost,
-            status=status,
+            trace_id=trace_id,
+            span_id=hashlib.md5(f"{trace_id}:{obs_id}".encode()).hexdigest()[:16],
+            parent_span_id=parent_span_id,
+            start_ns=int(t0 * 1e9),
+            end_ns=int(t1 * 1e9),
+            attributes=attrs,
+            error=is_error,
         )
 
 

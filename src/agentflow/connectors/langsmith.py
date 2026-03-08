@@ -6,7 +6,10 @@ import hashlib
 import time
 from datetime import datetime, timedelta, timezone
 
-from agentflow.converters.base import Span, Trace
+from agentflow.converters.base import (
+    AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_MODEL, GEN_AI_OUTPUT_TOKENS,
+    Trace, make_span,
+)
 
 
 class LangSmithConnector:
@@ -89,6 +92,7 @@ class LangSmithConnector:
             if span:
                 spans.append(span)
 
+        spans = [s for s in spans if s is not None]
         spans.sort(key=lambda s: s.start_time)
 
         return Trace(
@@ -103,20 +107,16 @@ class LangSmithConnector:
             },
         )
 
-    def _run_to_span(self, trace_id: str, run, is_root: bool = False) -> Span | None:
+    def _run_to_span(self, trace_id: str, run, is_root: bool = False):
         run_id = str(run.id)
         name = run.name or run.run_type or "unknown"
 
         t0 = _to_ts(run.start_time)
         t1 = _to_ts(run.end_time) if run.end_time else t0
 
-        # Tokens from usage_metadata
         usage = getattr(run, "usage_metadata", None) or {}
         input_tokens = usage.get("input_tokens", 0) or 0
         output_tokens = usage.get("output_tokens", 0) or 0
-
-        # Cost — LangSmith doesn't always expose this
-        cost = 0.0
 
         model = None
         extra = getattr(run, "extra", None) or {}
@@ -124,21 +124,29 @@ class LangSmithConnector:
         if invocation_params:
             model = invocation_params.get("model_name") or invocation_params.get("model")
 
-        status = "error" if run.error else "ok"
-        parent_id = str(run.parent_run_id) if run.parent_run_id else None
+        # Parent: compute span ID the same way (md5 of trace_id:parent_run_id)
+        parent_run_id = str(run.parent_run_id) if run.parent_run_id else None
+        parent_span_id = (
+            hashlib.md5(f"{trace_id}:{parent_run_id}".encode()).hexdigest()[:16]
+            if parent_run_id else None
+        )
 
-        return Span(
-            span_id=hashlib.md5(f"{trace_id}:{run_id}".encode()).hexdigest()[:16],
-            parent_id=parent_id,
+        attrs: dict = {"run_type": run.run_type or ""}
+        if model:
+            attrs[GEN_AI_MODEL] = model
+        attrs[GEN_AI_INPUT_TOKENS]  = input_tokens
+        attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
+        attrs[AF_COST]              = 0.0
+
+        return make_span(
             name=name,
-            start_time=t0,
-            end_time=t1,
-            attributes={"run_type": run.run_type or ""},
-            model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cost=cost,
-            status=status,
+            trace_id=trace_id,
+            span_id=hashlib.md5(f"{trace_id}:{run_id}".encode()).hexdigest()[:16],
+            parent_span_id=parent_span_id,
+            start_ns=int(t0 * 1e9),
+            end_ns=int(t1 * 1e9),
+            attributes=attrs,
+            error=bool(run.error),
         )
 
 

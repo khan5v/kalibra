@@ -12,7 +12,7 @@ from hashlib import md5
 
 import pandas as pd
 
-from agentflow.converters.base import Trace, Span
+from agentflow.converters.base import Trace, make_span
 
 # ── Action classification ──
 
@@ -138,18 +138,19 @@ def _parse_chat_trajectory(row) -> Trace | None:
             ))
 
             span_id = md5(f"{trace_id}:{step_idx}".encode()).hexdigest()[:16]
-            spans.append(Span(
-                span_id=span_id,
-                parent_id=None,
+            spans.append(make_span(
                 name=action_type,
-                start_time=t,
-                end_time=t + duration,
+                trace_id=trace_id,
+                span_id=span_id,
+                parent_span_id=None,
+                start_ns=int(t * 1e9),
+                end_ns=int((t + duration) * 1e9),
                 attributes={
                     "command": command[:200],
                     "thought": text[:200],
                     "observation_length": len(obs),
                 },
-                status="error" if is_error else "ok",
+                error=is_error,
             ))
             t += duration
             step_idx += 1
@@ -250,22 +251,26 @@ def _parse_action_format(trace_id: str, steps: list[dict], info: dict) -> Trace:
             "typeerror", "valueerror", "indexerror", "keyerror",
         ))
 
-        spans.append(Span(
-            span_id=span_id,
-            parent_id=None,
+        attrs: dict = {
+            "command": raw_action[:200],
+            "thought": step.get("thought", "")[:200],
+            "observation_length": len(obs),
+        }
+        if model_stats.get("model"):
+            from agentflow.converters.base import GEN_AI_MODEL, GEN_AI_INPUT_TOKENS, GEN_AI_OUTPUT_TOKENS, AF_COST
+            attrs[GEN_AI_MODEL]         = model_stats["model"]
+            attrs[GEN_AI_INPUT_TOKENS]  = model_stats.get("tokens_sent", 0) // max(len(steps), 1)
+            attrs[GEN_AI_OUTPUT_TOKENS] = model_stats.get("tokens_received", 0) // max(len(steps), 1)
+            attrs[AF_COST]              = model_stats.get("total_cost", 0.0) / max(len(steps), 1)
+        spans.append(make_span(
             name=action_type,
-            start_time=t,
-            end_time=t + duration,
-            attributes={
-                "command": raw_action[:200],
-                "thought": step.get("thought", "")[:200],
-                "observation_length": len(obs),
-            },
-            model=model_stats.get("model"),
-            input_tokens=model_stats.get("tokens_sent", 0) // max(len(steps), 1),
-            output_tokens=model_stats.get("tokens_received", 0) // max(len(steps), 1),
-            cost=model_stats.get("total_cost", 0) / max(len(steps), 1),
-            status="error" if is_error else "ok",
+            trace_id=trace_id,
+            span_id=span_id,
+            parent_span_id=None,
+            start_ns=int(t * 1e9),
+            end_ns=int((t + duration) * 1e9),
+            attributes=attrs,
+            error=is_error,
         ))
         t += duration
 

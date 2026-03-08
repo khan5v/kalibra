@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from agentflow.converters.base import Span, Trace
+from agentflow.converters.base import ReadableSpan, Trace
 
 
 def load_traces(path: str, trace_format: str = "auto", progress: bool = False) -> list[Trace]:
@@ -38,4 +38,4 @@ def _detect_format(path: Path) -> str:
     return "json"
 
 
-__all__ = ["load_traces", "Trace", "Span"]
+__all__ = ["load_traces", "Trace", "ReadableSpan"]

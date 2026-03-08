@@ -31,7 +31,8 @@ __version__ = "0.1.0"
 from agentflow.collection import TraceCollection
 from agentflow.compare import CompareResult, compare, compare_collections
 from agentflow.config import CompareConfig
-from agentflow.converters.base import Span, Trace
+from agentflow.converters.base import Trace, make_span
+from opentelemetry.sdk.trace import ReadableSpan
 from agentflow.metrics import ComparisonMetric, MetricResult
 
 __all__ = [
@@ -46,7 +47,8 @@ __all__ = [
     # Data model
     "TraceCollection",
     "Trace",
-    "Span",
+    "ReadableSpan",
+    "make_span",
     # Extension point
     "ComparisonMetric",
 ]

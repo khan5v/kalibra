@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agentflow.connectors.langfuse import LangfuseConnector, _parse_ts, parse_since
+from agentflow.converters.base import span_cost, span_input_tokens, span_is_error, span_model, span_output_tokens
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -107,29 +108,29 @@ def test_convert_outcome_heuristics(output_text, expected):
 def test_obs_to_span_basic():
     span = CONNECTOR._obs_to_span("trace-001", OBSERVATION)
     assert span.name == "bash_tool"
-    assert span.input_tokens == 100
-    assert span.output_tokens == 50
-    assert span.cost == 0.002
-    assert span.model == "gpt-4o"
-    assert span.status == "ok"
+    assert span_input_tokens(span) == 100
+    assert span_output_tokens(span) == 50
+    assert span_cost(span) == 0.002
+    assert span_model(span) == "gpt-4o"
+    assert not span_is_error(span)
 
 
 def test_obs_to_span_error_level():
     span = CONNECTOR._obs_to_span("trace-001", OBSERVATION_ERROR)
-    assert span.status == "error"
+    assert span_is_error(span)
 
 
 def test_obs_to_span_error_in_status_message():
     obs = {**OBSERVATION, "level": "DEFAULT", "statusMessage": "connection error"}
     span = CONNECTOR._obs_to_span("trace-001", obs)
-    assert span.status == "error"
+    assert span_is_error(span)
 
 
 def test_obs_to_span_missing_usage():
     obs = {**OBSERVATION, "usage": None}
     span = CONNECTOR._obs_to_span("trace-001", obs)
-    assert span.input_tokens == 0
-    assert span.output_tokens == 0
+    assert span_input_tokens(span) == 0
+    assert span_output_tokens(span) == 0
 
 
 def test_convert_creates_synthetic_span_when_no_observations():

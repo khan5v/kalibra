@@ -11,7 +11,7 @@ then reference it in ``agentflow.yml`` under ``plugins:`` or name it
 
 from __future__ import annotations
 
-from agentflow.converters.base import Trace
+from agentflow.converters.base import Trace, span_cost, span_input_tokens, span_is_error, span_output_tokens
 from agentflow.plugins.registry import _default
 
 register = _default.register
@@ -27,17 +27,17 @@ def retry_rate(node: str, traces: list[Trace]) -> float:
 @register("error_rate", "Fraction of invocations of this node that returned an error")
 def error_rate(node: str, traces: list[Trace]) -> float:
     spans = [s for t in traces for s in t.spans if s.name == node]
-    return round(sum(s.status == "error" for s in spans) / len(spans), 4) if spans else 0.0
+    return round(sum(span_is_error(s) for s in spans) / len(spans), 4) if spans else 0.0
 
 
 @register("cost_share", "This node's share of total cost across all traces")
 def cost_share(node: str, traces: list[Trace]) -> float:
-    node_cost = sum(s.cost for t in traces for s in t.spans if s.name == node)
-    total_cost = sum(s.cost for t in traces for s in t.spans)
+    node_cost = sum(span_cost(s) for t in traces for s in t.spans if s.name == node)
+    total_cost = sum(span_cost(s) for t in traces for s in t.spans)
     return round(node_cost / total_cost, 4) if total_cost else 0.0
 
 
 @register("token_intensity", "Average tokens per invocation of this node")
 def token_intensity(node: str, traces: list[Trace]) -> float:
-    tokens = [s.input_tokens + s.output_tokens for t in traces for s in t.spans if s.name == node]
+    tokens = [span_input_tokens(s) + span_output_tokens(s) for t in traces for s in t.spans if s.name == node]
     return round(sum(tokens) / len(tokens), 1) if tokens else 0.0

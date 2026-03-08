@@ -26,8 +26,9 @@ classifiers = [
 
 dependencies = [
     "click>=8.0",
-    "pandas>=2.0",   # swebench parquet ingestion
-    "pyyaml>=6.0",   # agentflow.yml config parsing
+    "opentelemetry-sdk>=1.20",  # ReadableSpan, SpanContext, StatusCode
+    "pandas>=2.0",              # swebench parquet ingestion
+    "pyyaml>=6.0",              # agentflow.yml config parsing
 ]
 
 [project.optional-dependencies]

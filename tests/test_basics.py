@@ -2,7 +2,7 @@
 
 from agentflow.collection import TraceCollection
 from agentflow.compare import compare, CompareResult
-from agentflow.converters.base import Span, Trace
+from agentflow.converters.base import AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_OUTPUT_TOKENS, Trace, make_span
 from agentflow.metrics import (
     CostMetric,
     DEFAULT_METRICS,
@@ -18,11 +18,16 @@ from agentflow.metrics import (
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _span(name: str, i: int = 0, status: str = "ok", cost: float = 0.0) -> Span:
-    return Span(
-        span_id=f"{name}_{i}", parent_id=None, name=name,
-        start_time=float(i), end_time=float(i + 1),
-        cost=cost, status=status,
+def _span(name: str, i: int = 0, status: str = "ok", cost: float = 0.0):
+    return make_span(
+        name=name,
+        trace_id="test-trace",
+        span_id=f"{name}_{i}",
+        parent_span_id=None,
+        start_ns=int(i * 1e9),
+        end_ns=int((i + 1) * 1e9),
+        attributes={AF_COST: cost},
+        error=(status == "error"),
     )
 
 
@@ -53,7 +58,11 @@ def test_trace_total_cost():
 
 
 def test_trace_total_tokens():
-    spans = [Span("s1", None, "a", 0.0, 1.0, input_tokens=10, output_tokens=5)]
+    spans = [make_span(
+        name="a", trace_id="t", span_id="s1", parent_span_id=None,
+        start_ns=0, end_ns=int(1e9),
+        attributes={GEN_AI_INPUT_TOKENS: 10, GEN_AI_OUTPUT_TOKENS: 5},
+    )]
     t = Trace("t", spans)
     assert t.total_tokens == 15
 

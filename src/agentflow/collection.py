@@ -5,7 +5,9 @@ from __future__ import annotations
 from collections import defaultdict
 from functools import cached_property
 
-from agentflow.converters.base import Span, Trace
+from opentelemetry.sdk.trace import ReadableSpan
+
+from agentflow.converters.base import Trace
 
 
 class TraceCollection:
@@ -49,7 +51,7 @@ class TraceCollection:
         """Look up a single trace by ID."""
         return self._by_id.get(trace_id)
 
-    def spans_for_node(self, node: str) -> list[Span]:
+    def spans_for_node(self, node: str) -> list[ReadableSpan]:
         """All spans with the given node name, across all traces."""
         return self._spans_by_node.get(node, [])
 
@@ -70,7 +72,7 @@ class TraceCollection:
         return {t.trace_id: t for t in self._traces}
 
     @cached_property
-    def _spans_by_node(self) -> dict[str, list[Span]]:
+    def _spans_by_node(self) -> dict[str, list[ReadableSpan]]:
         index: dict[str, list[Span]] = defaultdict(list)
         for t in self._traces:
             for s in t.spans:
