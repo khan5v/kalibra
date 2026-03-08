@@ -66,24 +66,30 @@ class CompareConfig:
     """Controls which metrics run and what threshold gates are applied.
 
     Attributes:
-        metrics:  Metric names or dotted module paths to load. ``None`` runs all
-                  DEFAULT_METRICS plus any auto-discovered plugins.
-                  Built-in names: ``"success_rate"``, ``"cost"``, etc.
-                  Dotted paths: ``"myproject.custom_metrics"`` — module is
-                  imported and its ``METRICS: list[ComparisonMetric]`` is run.
-        require:  Threshold expressions evaluated after comparison.
-                  Each is a string like ``"success_rate_delta >= -2"``.
-                  The compare command exits with code 1 if any expression fails.
+        metrics:           Metric names or dotted module paths to load. ``None`` runs all
+                           DEFAULT_METRICS plus any auto-discovered plugins.
+                           Built-in names: ``"success_rate"``, ``"cost"``, etc.
+                           Dotted paths: ``"myproject.custom_metrics"`` — module is
+                           imported and its ``METRICS: list[ComparisonMetric]`` is run.
+        require:           Threshold expressions evaluated after comparison.
+                           Each is a string like ``"success_rate_delta >= -2"``.
+                           The compare command exits with code 1 if any expression fails.
+        noise_thresholds:  Per-metric noise threshold overrides. Keyed by metric name.
+                           E.g. ``{"success_rate": 1.0, "cost": 5.0}``.
+                           Overrides the class-level default for that metric.
     """
 
     metrics: list[str] | None = None
     require: list[str] = field(default_factory=list)
+    noise_thresholds: dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "CompareConfig":
+        raw_noise = data.get("noise_thresholds") or {}
         return cls(
             metrics=data.get("metrics") or None,
             require=[r for r in (data.get("require") or []) if r],
+            noise_thresholds={k: float(v) for k, v in raw_noise.items()},
         )
 
     @classmethod

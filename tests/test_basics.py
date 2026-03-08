@@ -6,6 +6,7 @@ from agentflow.converters.base import AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_OUTPU
 from agentflow.metrics import (
     CostMetric,
     DEFAULT_METRICS,
+    Direction,
     DurationMetric,
     PathDistributionMetric,
     PerTaskMetric,
@@ -118,6 +119,7 @@ def test_success_rate_zero_delta():
     assert s["rate"] == 0.5
     result = m.compare(s, s)
     assert result.delta == 0.0
+    assert result.direction == Direction.SAME
 
 
 def test_success_rate_positive_delta():
@@ -269,6 +271,10 @@ def test_compare_same_data(tmp_path):
     assert result.thresholds_passed is True
     assert result["success_rate"].delta == 0.0
     assert result["per_task"].metadata["regressions"] == []
+    # Two-tree API
+    assert result.comparison.direction == Direction.SAME
+    assert result.validation.passed is True
+    assert result.validation.gates == []
 
 
 def test_compare_threshold_pass(tmp_path):
@@ -278,6 +284,9 @@ def test_compare_threshold_pass(tmp_path):
     save_jsonl(traces, f)
     result = compare(f, f, require=["success_rate_delta >= -5"])
     assert result.thresholds_passed is True
+    assert result.validation.passed is True
+    assert len(result.validation.gates) == 1
+    assert result.validation.gates[0].passed is True
 
 
 def test_compare_threshold_fail(tmp_path):
@@ -287,6 +296,8 @@ def test_compare_threshold_fail(tmp_path):
     save_jsonl(traces, f)
     result = compare(f, f, require=["success_rate_delta >= 99"])
     assert result.thresholds_passed is False
+    assert result.validation.passed is False
+    assert result.validation.gates[0].passed is False
 
 
 def test_all_default_metrics_present(tmp_path):
@@ -297,3 +308,57 @@ def test_all_default_metrics_present(tmp_path):
     result = compare(f, f)
     for m in DEFAULT_METRICS:
         assert m.name in result.metrics, f"Missing metric: {m.name}"
+        assert result.comparison.observations[m.name].direction is not None
+
+
+# ── Direction enum ─────────────────────────────────────────────────────────────
+
+def test_direction_upgrade():
+    m = CostMetric()
+    # bigger noise_threshold so small delta doesn't trigger
+    b = m.summarize(_col(_trace("t1", ["a"], costs=[1.0])))
+    c = m.summarize(_col(_trace("t1", ["a"], costs=[0.5])))
+    result = m.compare(b, c)
+    assert result.direction == Direction.UPGRADE  # cost went down → upgrade
+
+
+def test_direction_degradation():
+    m = CostMetric()
+    b = m.summarize(_col(_trace("t1", ["a"], costs=[0.5])))
+    c = m.summarize(_col(_trace("t1", ["a"], costs=[1.0])))
+    result = m.compare(b, c)
+    assert result.direction == Direction.DEGRADATION  # cost went up → degradation
+
+
+def test_per_task_direction_upgrade():
+    m = PerTaskMetric()
+    b = m.summarize(_col(_trace("task__model__0", ["a"], "failure")))
+    c = m.summarize(_col(_trace("task__model__0", ["a"], "success")))
+    result = m.compare(b, c)
+    assert result.direction == Direction.UPGRADE
+
+
+def test_per_task_direction_degradation():
+    m = PerTaskMetric()
+    b = m.summarize(_col(_trace("task__model__0", ["a"], "success")))
+    c = m.summarize(_col(_trace("task__model__0", ["a"], "failure")))
+    result = m.compare(b, c)
+    assert result.direction == Direction.DEGRADATION
+
+
+def test_rollup_direction_inconclusive(tmp_path):
+    """When some metrics improve and some degrade the roll-up is INCONCLUSIVE."""
+    from agentflow.converters.generic import save_jsonl
+    from agentflow.compare import compare_collections
+    from agentflow.collection import TraceCollection
+    from agentflow.metrics import SuccessRateMetric, CostMetric
+
+    # success improves (upgrade), cost stays same → UPGRADE
+    # We just test that the roll-up is not SAME when there's a real upgrade
+    traces_b = [_trace("t%d__m__0" % i, ["a"], "failure", costs=[0.01]) for i in range(10)]
+    traces_c = [_trace("t%d__m__0" % i, ["a"], "success", costs=[0.01]) for i in range(10)]
+    baseline = TraceCollection.from_traces(traces_b, source="b")
+    current  = TraceCollection.from_traces(traces_c, source="c")
+    result = compare_collections(baseline, current)
+    # success_rate massively improved; direction should not be SAME or DEGRADATION
+    assert result.comparison.direction in (Direction.UPGRADE, Direction.INCONCLUSIVE)

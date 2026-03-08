@@ -6,6 +6,7 @@ import math
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, ClassVar
 
 from agentflow.collection import TraceCollection
@@ -16,19 +17,35 @@ _MIN_N = 30       # below this, any metric is suspect
 _MIN_P95_N = 100  # below this, percentile stats are unreliable
 
 
+# ── Direction ─────────────────────────────────────────────────────────────────
+
+class Direction(str, Enum):
+    """Comparison signal for an observation or a rolled-up comparison."""
+    UPGRADE      = "upgrade"       # meaningfully better
+    SAME         = "same"          # within noise
+    DEGRADATION  = "degradation"   # meaningfully worse
+    INCONCLUSIVE = "inconclusive"  # metrics pull in opposite directions
+    NA           = "n/a"           # no data to compare
+
+
 # ── Result ────────────────────────────────────────────────────────────────────
 
 @dataclass
-class MetricResult:
+class Observation:
     """Outcome of comparing one metric across baseline and current."""
     name: str
     description: str
+    direction: Direction
     baseline: Any                        # raw summary from summarize()
     current: Any                         # raw summary from summarize()
     delta: float | None = None           # primary scalar delta (pp or %)
     formatted: str = ""                  # one-line human-readable summary
     metadata: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+
+
+# Backwards compatibility alias
+MetricResult = Observation
 
 
 # ── Base class ────────────────────────────────────────────────────────────────
@@ -45,36 +62,56 @@ class ComparisonMetric(ABC):
         class MyMetric(ComparisonMetric):
             name = "my_metric"
             description = "Something useful"
+            noise_threshold = 2.0
+            higher_is_better = True
 
             def summarize(self, col: TraceCollection) -> float:
                 return sum(len(t.spans) for t in col.all_traces())
 
-            def compare(self, baseline: float, current: float) -> MetricResult:
+            def compare(self, baseline: float, current: float) -> Observation:
                 delta = _pct_delta(baseline, current)
-                return MetricResult(
+                direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
+                return Observation(
                     name=self.name, description=self.description,
+                    direction=direction,
                     baseline=baseline, current=current,
                     delta=delta, formatted=f"{baseline:.0f} → {current:.0f}  {delta:+.1f}%",
                 )
 
-            def threshold_fields(self, result: MetricResult) -> dict[str, float]:
+            def threshold_fields(self, result: Observation) -> dict[str, float]:
                 return {"my_metric_delta": result.delta}
     """
 
     name: ClassVar[str]
     description: ClassVar[str]
+    noise_threshold: ClassVar[float] = 0.5
+    higher_is_better: ClassVar[bool] = True
 
     @abstractmethod
     def summarize(self, col: TraceCollection) -> Any:
         """Reduce a collection to a summary value for this metric."""
 
     @abstractmethod
-    def compare(self, baseline: Any, current: Any) -> MetricResult:
-        """Compute a MetricResult from two summary values."""
+    def compare(self, baseline: Any, current: Any) -> Observation:
+        """Compute an Observation from two summary values."""
 
-    def threshold_fields(self, result: MetricResult) -> dict[str, float]:
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
         """Named scalar values exposed for ``--require`` threshold expressions."""
         return {}
+
+
+# ── Direction helper ──────────────────────────────────────────────────────────
+
+def _direction_from_delta(
+    delta: float | None,
+    noise_threshold: float,
+    higher_is_better: bool = True,
+) -> Direction:
+    if delta is None:
+        return Direction.NA
+    if abs(delta) <= noise_threshold:
+        return Direction.SAME
+    return Direction.UPGRADE if (delta > 0) == higher_is_better else Direction.DEGRADATION
 
 
 # ── Built-in metrics ──────────────────────────────────────────────────────────
@@ -82,6 +119,8 @@ class ComparisonMetric(ABC):
 class SuccessRateMetric(ComparisonMetric):
     name = "success_rate"
     description = "Task success rate delta with statistical significance"
+    noise_threshold = 0.5
+    higher_is_better = True
 
     def summarize(self, col: TraceCollection) -> dict:
         traces = col.all_traces()
@@ -98,7 +137,7 @@ class SuccessRateMetric(ComparisonMetric):
             "rate": successes / with_outcome if with_outcome else None,
         }
 
-    def compare(self, baseline: dict, current: dict) -> MetricResult:
+    def compare(self, baseline: dict, current: dict) -> Observation:
         warnings: list[str] = []
 
         b_rate, c_rate = baseline["rate"], current["rate"]
@@ -108,8 +147,9 @@ class SuccessRateMetric(ComparisonMetric):
             if b_rate is None and c_rate is None:
                 side = "both datasets"
             warnings.append(f"No outcome data in {side} — success rate is unavailable")
-            return MetricResult(
+            return Observation(
                 name=self.name, description=self.description,
+                direction=Direction.NA,
                 baseline=baseline, current=current,
                 formatted="n/a — no outcome data",
                 warnings=warnings,
@@ -131,15 +171,20 @@ class SuccessRateMetric(ComparisonMetric):
                 f"Only {small} traces with known outcomes — recommend ≥{_MIN_N} for reliable rates"
             )
 
-        return MetricResult(
+        direction = _direction_from_delta(delta_pp, self.noise_threshold, self.higher_is_better)
+        if not significant:
+            direction = Direction.SAME
+
+        return Observation(
             name=self.name, description=self.description,
+            direction=direction,
             baseline=baseline, current=current,
             delta=round(delta_pp, 2), formatted=formatted,
             metadata={"pvalue": pval, "significant": significant},
             warnings=warnings,
         )
 
-    def threshold_fields(self, result: MetricResult) -> dict[str, float]:
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
         if result.delta is None:
             return {}
         return {
@@ -151,6 +196,8 @@ class SuccessRateMetric(ComparisonMetric):
 class PerTaskMetric(ComparisonMetric):
     name = "per_task"
     description = "Per-task regression and improvement detection"
+    noise_threshold = 0.0
+    higher_is_better = True
 
     def summarize(self, col: TraceCollection) -> dict[str, str]:
         """Returns {task_id: outcome} for all traces with a known outcome."""
@@ -160,7 +207,7 @@ class PerTaskMetric(ComparisonMetric):
                 outcomes.setdefault(_extract_task_id(t.trace_id), t.outcome)
         return outcomes
 
-    def compare(self, baseline: dict, current: dict) -> MetricResult:
+    def compare(self, baseline: dict, current: dict) -> Observation:
         warnings: list[str] = []
         matched = {t for t in baseline if t in current}
         regressions  = sorted(t for t in matched if baseline[t] == "success" and current[t] == "failure")
@@ -184,8 +231,18 @@ class PerTaskMetric(ComparisonMetric):
                     f"({match_rate:.0%}) — per-task results may not be representative"
                 )
 
-        return MetricResult(
+        if not matched:
+            direction = Direction.NA
+        elif len(regressions) > len(improvements):
+            direction = Direction.DEGRADATION
+        elif len(improvements) > len(regressions):
+            direction = Direction.UPGRADE
+        else:
+            direction = Direction.SAME
+
+        return Observation(
             name=self.name, description=self.description,
+            direction=direction,
             baseline=len(baseline), current=len(current),
             formatted=formatted,
             metadata={
@@ -196,7 +253,7 @@ class PerTaskMetric(ComparisonMetric):
             warnings=warnings,
         )
 
-    def threshold_fields(self, result: MetricResult) -> dict[str, float]:
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
             "regressions":  len(result.metadata["regressions"]),
             "improvements": len(result.metadata["improvements"]),
@@ -206,6 +263,8 @@ class PerTaskMetric(ComparisonMetric):
 class CostMetric(ComparisonMetric):
     name = "cost"
     description = "Average cost per trace"
+    noise_threshold = 3.0
+    higher_is_better = False
 
     def summarize(self, col: TraceCollection) -> dict:
         costs = [t.total_cost for t in col.all_traces()]
@@ -216,12 +275,13 @@ class CostMetric(ComparisonMetric):
             "n": len(costs),
         }
 
-    def compare(self, baseline: dict, current: dict) -> MetricResult:
+    def compare(self, baseline: dict, current: dict) -> Observation:
         warnings: list[str] = []
         if baseline["all_zero"] and current["all_zero"]:
             warnings.append("All span costs are 0 — cost data may not be populated in your traces")
-            return MetricResult(
+            return Observation(
                 name=self.name, description=self.description,
+                direction=Direction.NA,
                 baseline=baseline, current=current,
                 formatted="n/a — no cost data",
                 warnings=warnings,
@@ -230,14 +290,16 @@ class CostMetric(ComparisonMetric):
         delta = _pct_delta(baseline["avg"], current["avg"])
         sign = "+" if delta >= 0 else ""
         formatted = f"${baseline['avg']:.4f} → ${current['avg']:.4f}  {sign}{delta:.1f}%"
-        return MetricResult(
+        direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
+        return Observation(
             name=self.name, description=self.description,
+            direction=direction,
             baseline=baseline, current=current,
             delta=delta, formatted=formatted,
             warnings=warnings,
         )
 
-    def threshold_fields(self, result: MetricResult) -> dict[str, float]:
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
         if result.delta is None:
             return {}
         return {"cost_delta_pct": result.delta}
@@ -246,34 +308,40 @@ class CostMetric(ComparisonMetric):
 class StepsMetric(ComparisonMetric):
     name = "steps"
     description = "Average steps (spans) per trace"
+    noise_threshold = 3.0
+    higher_is_better = False
 
     def summarize(self, col: TraceCollection) -> dict:
         steps = [len(t.spans) for t in col.all_traces()]
         return {"avg": _mean(steps), "n": len(steps)}
 
-    def compare(self, baseline: dict, current: dict) -> MetricResult:
+    def compare(self, baseline: dict, current: dict) -> Observation:
         delta = _pct_delta(baseline["avg"], current["avg"])
         sign = "+" if delta >= 0 else ""
         formatted = f"{baseline['avg']:.1f} → {current['avg']:.1f} steps  {sign}{delta:.1f}%"
-        return MetricResult(
+        direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
+        return Observation(
             name=self.name, description=self.description,
+            direction=direction,
             baseline=baseline, current=current,
             delta=delta, formatted=formatted,
         )
 
-    def threshold_fields(self, result: MetricResult) -> dict[str, float]:
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {"steps_delta_pct": result.delta}
 
 
 class DurationMetric(ComparisonMetric):
     name = "duration"
     description = "Trace duration — average and P95 latency"
+    noise_threshold = 5.0
+    higher_is_better = False
 
     def summarize(self, col: TraceCollection) -> dict:
         durations = sorted(t.duration for t in col.all_traces())
         return {"avg": _mean(durations), "p95": _percentile(durations, 95), "n": len(durations)}
 
-    def compare(self, baseline: dict, current: dict) -> MetricResult:
+    def compare(self, baseline: dict, current: dict) -> Observation:
         warnings: list[str] = []
         avg_delta = _pct_delta(baseline["avg"], current["avg"])
         p95_delta = _pct_delta(baseline["p95"], current["p95"])
@@ -290,15 +358,17 @@ class DurationMetric(ComparisonMetric):
                 f"P95 computed from {small_n} traces — recommend ≥{_MIN_P95_N} for stable percentiles"
             )
 
-        return MetricResult(
+        direction = _direction_from_delta(avg_delta, self.noise_threshold, self.higher_is_better)
+        return Observation(
             name=self.name, description=self.description,
+            direction=direction,
             baseline=baseline, current=current,
             delta=avg_delta, formatted=formatted,
             metadata={"p95_delta_pct": p95_delta},
             warnings=warnings,
         )
 
-    def threshold_fields(self, result: MetricResult) -> dict[str, float]:
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
             "duration_delta_pct":     result.delta,
             "duration_p95_delta_pct": result.metadata["p95_delta_pct"],
@@ -308,6 +378,8 @@ class DurationMetric(ComparisonMetric):
 class ToolErrorRateMetric(ComparisonMetric):
     name = "tool_error_rate"
     description = "Fraction of tool invocations that returned an error"
+    noise_threshold = 0.5
+    higher_is_better = False
 
     def summarize(self, col: TraceCollection) -> dict:
         spans = [s for t in col.all_traces() for s in t.spans]
@@ -315,7 +387,7 @@ class ToolErrorRateMetric(ComparisonMetric):
         return {"rate": errors / len(spans) if spans else 0.0,
                 "errors": errors, "total": len(spans)}
 
-    def compare(self, baseline: dict, current: dict) -> MetricResult:
+    def compare(self, baseline: dict, current: dict) -> Observation:
         warnings: list[str] = []
         delta_pp = (current["rate"] - baseline["rate"]) * 100
         sign = "+" if delta_pp >= 0 else ""
@@ -327,20 +399,24 @@ class ToolErrorRateMetric(ComparisonMetric):
                 f"Only {small_n} tool invocations — error rate estimate may be noisy"
             )
 
-        return MetricResult(
+        direction = _direction_from_delta(delta_pp, self.noise_threshold, self.higher_is_better)
+        return Observation(
             name=self.name, description=self.description,
+            direction=direction,
             baseline=baseline, current=current,
             delta=round(delta_pp, 2), formatted=formatted,
             warnings=warnings,
         )
 
-    def threshold_fields(self, result: MetricResult) -> dict[str, float]:
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {"tool_error_rate_delta": result.delta}
 
 
 class PathDistributionMetric(ComparisonMetric):
     name = "path_distribution"
     description = "Jaccard similarity of top execution paths"
+    noise_threshold = 0.0
+    higher_is_better = True
 
     def summarize(self, col: TraceCollection) -> dict:
         traces = col.all_traces()
@@ -351,7 +427,7 @@ class PathDistributionMetric(ComparisonMetric):
             "unique_paths": len(path_counts),
         }
 
-    def compare(self, baseline: dict, current: dict) -> MetricResult:
+    def compare(self, baseline: dict, current: dict) -> Observation:
         warnings: list[str] = []
         b, c = baseline["top_paths"], current["top_paths"]
         jaccard = len(b & c) / len(b | c) if (b | c) else 1.0
@@ -369,8 +445,11 @@ class PathDistributionMetric(ComparisonMetric):
                 f"small samples inflate apparent path divergence"
             )
 
-        return MetricResult(
+        direction = Direction.SAME if jaccard >= 0.8 else Direction.INCONCLUSIVE
+
+        return Observation(
             name=self.name, description=self.description,
+            direction=direction,
             baseline=len(b), current=len(c),
             delta=round(jaccard, 3), formatted=formatted,
             metadata={
@@ -381,7 +460,7 @@ class PathDistributionMetric(ComparisonMetric):
             warnings=warnings,
         )
 
-    def threshold_fields(self, result: MetricResult) -> dict[str, float]:
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {"path_jaccard": result.metadata["jaccard"]}
 
 

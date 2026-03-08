@@ -29,11 +29,11 @@ Programmatic API::
 __version__ = "0.1.0"
 
 from agentflow.collection import TraceCollection
-from agentflow.compare import CompareResult, compare, compare_collections
+from agentflow.compare import CompareResult, ComparisonResult, ValidationResult, Gate, compare, compare_collections
 from agentflow.config import CompareConfig
 from agentflow.converters.base import Trace, make_span
 from opentelemetry.sdk.trace import ReadableSpan
-from agentflow.metrics import ComparisonMetric, MetricResult
+from agentflow.metrics import ComparisonMetric, Direction, Observation, MetricResult
 
 __all__ = [
     # Entry points
@@ -41,7 +41,12 @@ __all__ = [
     "compare_collections",
     # Result types
     "CompareResult",
-    "MetricResult",
+    "ComparisonResult",
+    "ValidationResult",
+    "Gate",
+    "Direction",
+    "Observation",
+    "MetricResult",      # backwards compat alias for Observation
     # Configuration
     "CompareConfig",
     # Data model

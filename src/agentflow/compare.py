@@ -6,22 +6,64 @@ from dataclasses import dataclass, field
 
 from agentflow.collection import TraceCollection
 from agentflow.config import CompareConfig, resolve_metrics
-from agentflow.metrics import ComparisonMetric, DEFAULT_METRICS, MetricResult
+from agentflow.metrics import ComparisonMetric, DEFAULT_METRICS, Direction, Observation
+
+
+# ── Result types ──────────────────────────────────────────────────────────────
+
+@dataclass
+class Gate:
+    """A single threshold gate evaluation."""
+    expr: str
+    passed: bool
+    actual: float
+    metric_name: str | None = None
+
+
+@dataclass
+class ComparisonResult:
+    """What changed? Rolled-up direction + per-metric observations."""
+    direction: Direction
+    observations: dict[str, Observation]
+
+
+@dataclass
+class ValidationResult:
+    """Did it pass? Gate evaluations."""
+    passed: bool
+    gates: list[Gate]
 
 
 @dataclass
 class CompareResult:
+    # Metadata
     baseline_source: str
     current_source: str
     baseline_count: int
     current_count: int
-    metrics: dict[str, MetricResult]
-    threshold_results: list[dict] = field(default_factory=list)
-    thresholds_passed: bool = True
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[str]
+    # The two independent trees
+    comparison: ComparisonResult
+    validation: ValidationResult
 
-    def __getitem__(self, name: str) -> MetricResult:
-        return self.metrics[name]
+    # Backwards-compat shims
+    @property
+    def thresholds_passed(self) -> bool:
+        return self.validation.passed
+
+    @property
+    def metrics(self) -> dict[str, Observation]:
+        return self.comparison.observations
+
+    def __getitem__(self, name: str) -> Observation:
+        return self.comparison.observations[name]
+
+    @property
+    def threshold_results(self) -> list[dict]:
+        return [
+            {"expr": g.expr, "passed": g.passed, "actual": g.actual}
+            for g in self.validation.gates
+        ]
 
 
 def compare(
@@ -88,8 +130,8 @@ def compare_collections(
                 require=["success_rate_delta >= -2"],
             ),
         )
-        for name, m in result.metrics.items():
-            print(f"{name}: {m.formatted}")
+        for name, obs in result.comparison.observations.items():
+            print(f"{name}: {obs.direction.value}  {obs.formatted}")
     """
     if config is None:
         config = CompareConfig.load()
@@ -116,29 +158,54 @@ def compare_collections(
             "confidence intervals are asymmetric; treat deltas with caution"
         )
 
-    metric_results: dict[str, MetricResult] = {}
+    observations: dict[str, Observation] = {}
     threshold_values: dict[str, float] = {}
 
     for m in active:
+        # Apply per-metric noise threshold override from config.
+        noise = config.noise_thresholds.get(m.name)
+        if noise is not None:
+            m.noise_threshold = noise  # instance-level override
+
         b_summary = m.summarize(baseline)
         c_summary = m.summarize(current)
-        result = m.compare(b_summary, c_summary)
-        metric_results[result.name] = result
-        threshold_values.update(m.threshold_fields(result))
+        obs = m.compare(b_summary, c_summary)
+        observations[obs.name] = obs
+        threshold_values.update(m.threshold_fields(obs))
 
     all_require = list(config.require) + list(require or [])
-    threshold_results, thresholds_passed = _eval_thresholds(threshold_values, all_require)
+    gates = _eval_thresholds(threshold_values, all_require)
 
     return CompareResult(
         baseline_source=baseline.source,
         current_source=current.source,
         baseline_count=len(baseline),
         current_count=len(current),
-        metrics=metric_results,
-        threshold_results=threshold_results,
-        thresholds_passed=thresholds_passed,
         warnings=result_warnings,
+        comparison=ComparisonResult(
+            direction=_rollup_direction(observations),
+            observations=observations,
+        ),
+        validation=ValidationResult(
+            passed=all(g.passed for g in gates),
+            gates=gates,
+        ),
     )
+
+
+# ── Direction roll-up ─────────────────────────────────────────────────────────
+
+def _rollup_direction(observations: dict[str, Observation]) -> Direction:
+    statuses = {obs.direction for obs in observations.values() if obs.direction != Direction.NA}
+    if not statuses:
+        return Direction.NA
+    if Direction.DEGRADATION in statuses and Direction.UPGRADE in statuses:
+        return Direction.INCONCLUSIVE
+    if Direction.DEGRADATION in statuses:
+        return Direction.DEGRADATION
+    if Direction.UPGRADE in statuses:
+        return Direction.UPGRADE
+    return Direction.SAME
 
 
 # ── Threshold evaluation ───────────────────────────────────────────────────────
@@ -152,36 +219,32 @@ _OPS = {
 }
 
 
-def _eval_thresholds(values: dict[str, float], exprs: list[str]) -> tuple[list[dict], bool]:
-    all_passed = True
-    results = []
+def _eval_thresholds(values: dict[str, float], exprs: list[str]) -> list[Gate]:
+    gates = []
     for expr in exprs:
         expr = expr.strip()
         if not expr:
             continue
-        entry = _eval_expr(expr, values)
-        if not entry["passed"]:
-            all_passed = False
-        results.append(entry)
-    return results, all_passed
+        gates.append(_eval_expr(expr, values))
+    return gates
 
 
-def _eval_expr(expr: str, values: dict[str, float]) -> dict:
+def _eval_expr(expr: str, values: dict[str, float]) -> Gate:
     for op in (">=", "<=", ">", "<", "="):
         if op in expr:
             field, val_str = (s.strip() for s in expr.split(op, 1))
             try:
                 threshold = float(val_str)
             except ValueError:
-                return {"expr": expr, "passed": False, "actual": None, "threshold": val_str}
+                return Gate(expr=expr, passed=False, actual=float("nan"))
             if field not in values:
                 available = sorted(values)
                 raise ValueError(f"Unknown threshold field: {field!r}. Available: {available}")
             actual = values[field]
-            return {
-                "expr": expr,
-                "passed": _OPS[op](actual, threshold),
-                "actual": round(actual, 4),
-                "threshold": threshold,
-            }
+            return Gate(
+                expr=expr,
+                passed=_OPS[op](actual, threshold),
+                actual=round(actual, 4),
+                metric_name=field.split("_delta")[0] if "_delta" in field else None,
+            )
     raise ValueError(f"Cannot parse threshold expression: {expr!r}")

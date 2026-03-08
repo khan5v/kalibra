@@ -5,6 +5,33 @@ from __future__ import annotations
 import json
 
 from agentflow.compare import CompareResult
+from agentflow.metrics import Direction
+
+
+_DIRECTION_BADGE = {
+    Direction.UPGRADE:      "▲",
+    Direction.SAME:         "≈",
+    Direction.DEGRADATION:  "▼",
+    Direction.INCONCLUSIVE: "~",
+    Direction.NA:           "—",
+}
+
+_DIRECTION_LABEL = {
+    Direction.UPGRADE:      "upgrade",
+    Direction.SAME:         "same",
+    Direction.DEGRADATION:  "degradation",
+    Direction.INCONCLUSIVE: "inconclusive",
+    Direction.NA:           "n/a",
+}
+
+_LABELS = {
+    "success_rate":      "Success rate",
+    "cost":              "Avg cost",
+    "steps":             "Avg steps",
+    "duration":          "Duration",
+    "tool_error_rate":   "Tool error rate",
+    "path_distribution": "Path distribution",
+}
 
 
 def render(result: CompareResult, fmt: str) -> str:
@@ -22,12 +49,16 @@ def render(result: CompareResult, fmt: str) -> str:
 
 def _terminal(r: CompareResult) -> str:
     bar = "─" * 58
+    direction = r.comparison.direction
+    badge = _DIRECTION_BADGE[direction]
+    label = _DIRECTION_LABEL[direction].upper()
     lines = [
         "",
         "  AgentFlow Compare",
         "  " + bar,
         f"  Baseline  {r.baseline_count:>8,} traces   ({r.baseline_source})",
         f"  Current   {r.current_count:>8,} traces   ({r.current_source})",
+        f"  Overall   {badge} {label}",
         "",
     ]
 
@@ -36,12 +67,13 @@ def _terminal(r: CompareResult) -> str:
             lines.append(f"  ⚠  {w}")
         lines.append("")
 
-    for m in r.metrics.values():
-        if m.name == "per_task":
-            meta = m.metadata
-            if meta["matched"] == 0 and not m.warnings:
+    for obs in r.comparison.observations.values():
+        badge_m = _DIRECTION_BADGE[obs.direction]
+        if obs.name == "per_task":
+            meta = obs.metadata
+            if meta["matched"] == 0 and not obs.warnings:
                 continue
-            lines.append(f"  Per-task      {m.formatted}")
+            lines.append(f"  {badge_m} Per-task      {obs.formatted}")
             if meta["improvements"]:
                 items = ", ".join(meta["improvements"][:5])
                 more = f" …+{len(meta['improvements'])-5}" if len(meta["improvements"]) > 5 else ""
@@ -51,43 +83,37 @@ def _terminal(r: CompareResult) -> str:
                 more = f" …+{len(meta['regressions'])-5}" if len(meta["regressions"]) > 5 else ""
                 lines.append(f"    ✗ Regressed: {items}{more}")
         else:
-            label = _LABELS.get(m.name, m.name)
-            lines.append(f"  {label:<18}{m.formatted}")
-        for w in m.warnings:
+            label_m = _LABELS.get(obs.name, obs.name)
+            lines.append(f"  {badge_m} {label_m:<18}{obs.formatted}")
+        for w in obs.warnings:
             lines.append(f"    ⚠  {w}")
 
-    if r.threshold_results:
+    if r.validation.gates:
         lines.append("")
         lines.append("  Thresholds")
-        for t in r.threshold_results:
-            icon = "✓" if t["passed"] else "✗"
-            actual = f"{t['actual']:.2f}" if t["actual"] is not None else "n/a"
-            lines.append(f"    {icon} {t['expr']}   (actual: {actual})")
+        for g in r.validation.gates:
+            icon = "✓" if g.passed else "✗"
+            actual = f"{g.actual:.2f}" if g.actual == g.actual else "n/a"  # nan-safe
+            lines.append(f"    {icon} {g.expr}   (actual: {actual})")
 
     lines += ["", "  " + bar]
-    lines.append("  FAILED: one or more thresholds not met" if not r.thresholds_passed
+    lines.append("  FAILED: one or more thresholds not met" if not r.validation.passed
                  else "  All checks passed")
     lines.append("")
     return "\n".join(lines)
 
 
-_LABELS = {
-    "success_rate":    "Success rate",
-    "cost":            "Avg cost",
-    "steps":           "Avg steps",
-    "duration":        "Duration",
-    "tool_error_rate": "Tool error rate",
-    "path_distribution": "Path distribution",
-}
-
-
 # ── Markdown ───────────────────────────────────────────────────────────────────
 
 def _markdown(r: CompareResult) -> str:
+    direction = r.comparison.direction
+    badge = _DIRECTION_BADGE[direction]
+    label = _DIRECTION_LABEL[direction]
     lines = [
         "## AgentFlow: Agent Quality Report\n",
         f"**Baseline:** `{r.baseline_source}` ({r.baseline_count:,} traces)  ",
-        f"**Current:** `{r.current_source}` ({r.current_count:,} traces)\n",
+        f"**Current:** `{r.current_source}` ({r.current_count:,} traces)  ",
+        f"**Overall:** {badge} {label}\n",
     ]
 
     if r.warnings:
@@ -95,19 +121,19 @@ def _markdown(r: CompareResult) -> str:
             lines.append(f"> ⚠️ {w}")
         lines.append("")
 
-    lines += ["| Metric | Result | Notes |", "|--------|--------|-------|"]
+    lines += ["| Metric | Dir | Result | Notes |", "|--------|-----|--------|-------|"]
 
-    for m in r.metrics.values():
-        if m.name == "per_task":
+    for obs in r.comparison.observations.values():
+        if obs.name == "per_task":
             continue
-        label = _LABELS.get(m.name, m.name)
-        icon = _delta_icon(m.name, m.delta)
-        notes = " ".join(f"⚠️ {w}" for w in m.warnings) if m.warnings else ""
-        lines.append(f"| {label} | {icon} {m.formatted} | {notes} |")
+        label_m = _LABELS.get(obs.name, obs.name)
+        badge_m = _DIRECTION_BADGE[obs.direction]
+        notes = " ".join(f"⚠️ {w}" for w in obs.warnings) if obs.warnings else ""
+        lines.append(f"| {label_m} | {badge_m} | {obs.formatted} | {notes} |")
 
     lines.append("")
 
-    pt = r.metrics.get("per_task")
+    pt = r.comparison.observations.get("per_task")
     if pt and pt.metadata["matched"] > 0:
         meta = pt.metadata
         lines.append(f"**{meta['matched']:,} tasks matched**\n")
@@ -126,39 +152,27 @@ def _markdown(r: CompareResult) -> str:
                 lines.append(f"- _…and {len(meta['regressions']) - 10} more_")
             lines.append("")
 
-    if r.threshold_results:
+    if r.validation.gates:
         lines.append("**Thresholds**\n")
-        for t in r.threshold_results:
-            icon = "✅" if t["passed"] else "❌"
-            actual = f"{t['actual']:.2f}" if t["actual"] is not None else "n/a"
-            lines.append(f"- {icon} `{t['expr']}` — actual: `{actual}`")
+        for g in r.validation.gates:
+            icon = "✅" if g.passed else "❌"
+            actual = f"{g.actual:.2f}" if g.actual == g.actual else "n/a"
+            lines.append(f"- {icon} `{g.expr}` — actual: `{actual}`")
         lines.append("")
 
     lines.append(
         "> ❌ **CI gate failed** — one or more thresholds not met"
-        if not r.thresholds_passed else
+        if not r.validation.passed else
         "> ✅ All checks passed"
     )
     lines.append("\n_Generated by [AgentFlow](https://github.com/vorekhov/agentflow)_")
     return "\n".join(lines)
 
 
-def _delta_icon(metric_name: str, delta: float | None) -> str:
-    """Return ✅/⚠️/— based on whether a delta is good or bad."""
-    if delta is None:
-        return ""
-    lower_is_better = {"cost", "steps", "duration", "tool_error_rate"}
-    if metric_name in lower_is_better:
-        return "✅" if delta <= 0 else "⚠️"
-    if metric_name == "path_distribution":
-        return "✅" if delta >= 0.8 else "⚠️"
-    return "✅" if delta >= 0 else "⚠️"
-
-
 # ── JSON ───────────────────────────────────────────────────────────────────────
 
 def _json(r: CompareResult) -> str:
-    def _serialise(v):
+    def _ser(v):
         if isinstance(v, set):
             return list(v)
         return v
@@ -166,20 +180,30 @@ def _json(r: CompareResult) -> str:
     payload = {
         "baseline": {"source": r.baseline_source, "count": r.baseline_count},
         "current":  {"source": r.current_source,  "count": r.current_count},
-        "metrics": {
-            name: {
-                "description": m.description,
-                "baseline": _serialise(m.baseline),
-                "current":  _serialise(m.current),
-                "delta":    m.delta,
-                "formatted": m.formatted,
-                "metadata": {k: _serialise(v) for k, v in m.metadata.items()},
-            }
-            for name, m in r.metrics.items()
+        "warnings": r.warnings,
+        "comparison": {
+            "direction": r.comparison.direction.value,
+            "observations": {
+                name: {
+                    "description": obs.description,
+                    "direction":   obs.direction.value,
+                    "baseline":    _ser(obs.baseline),
+                    "current":     _ser(obs.current),
+                    "delta":       obs.delta,
+                    "formatted":   obs.formatted,
+                    "metadata":    {k: _ser(v) for k, v in obs.metadata.items()},
+                    "warnings":    obs.warnings,
+                }
+                for name, obs in r.comparison.observations.items()
+            },
         },
-        "thresholds": {
-            "passed": r.thresholds_passed,
-            "results": r.threshold_results,
+        "validation": {
+            "passed": r.validation.passed,
+            "gates": [
+                {"expr": g.expr, "passed": g.passed, "actual": g.actual,
+                 "metric_name": g.metric_name}
+                for g in r.validation.gates
+            ],
         },
     }
     return json.dumps(payload, indent=2)
