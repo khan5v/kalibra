@@ -27,8 +27,8 @@ def main():
 @click.option("--require", "-r", multiple=True,
               help="Threshold expression, e.g. 'success_rate_delta >= -2'.")
 @click.option("--config", "config_path", default=None, type=click.Path(),
-              help="Compare config file (default: config/compare.yml).")
-@click.option("--sources-dir", default=None, type=click.Path(),
+              help="Path to compare config file (default: config/compare.yml).")
+@click.option("--sources", "sources_dir", default=None, type=click.Path(),
               help="Sources directory (default: config/sources/).")
 @click.option("--output", "-o", type=click.Path(), default=None,
               help="Write output to file instead of stdout.")
@@ -44,15 +44,35 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
       - @name  — a named source from sources.yml (pulls and caches automatically)
 
     \b
+    --config accepts:
+      - A bare name (e.g. myteam) → resolved from ~/.config/agentflow/myteam.yml or myteam/
+      - A file path  → used directly as compare.yml
+      - A directory  → uses <dir>/compare.yml and <dir>/sources/
+
+    \b
     Examples:
       agentflow compare --baseline ./baseline/ --current ./current/
       agentflow compare --baseline @baseline --current @current
-      agentflow compare --baseline @baseline --current ./fresh-run.jsonl
-      agentflow compare --baseline @baseline --current @current --refresh
+      agentflow compare --baseline @baseline --current @current --config /data/configs/prod.yml
+      agentflow compare --baseline @baseline --current @current --config ~/my-configs/
     """
+    from pathlib import Path
+
     from agentflow.compare import compare as _compare
     from agentflow.config import CompareConfig, load_sources
     from agentflow.report import render
+
+    if config_path is not None:
+        p = Path(config_path)
+        if not p.exists():
+            raise click.UsageError(f"Config file not found: {config_path}")
+        if p.is_dir():
+            raise click.UsageError(f"--config must be a file, not a directory: {config_path}")
+
+    if sources_dir is not None:
+        s = Path(sources_dir)
+        if not s.exists() or not s.is_dir():
+            raise click.UsageError(f"Sources path is not a directory: {sources_dir}")
 
     config = CompareConfig.load(config_path)
     sources = load_sources(sources_dir)
