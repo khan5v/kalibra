@@ -127,6 +127,27 @@ agentflow compare --baseline @baseline --current ./fresh-run.jsonl
 --output report.md   # write to file instead of stdout
 ```
 
+### Pointing to external config
+
+By default AgentFlow looks for `config/compare.yml` and `config/sources/` relative to the current directory. Override either with flags:
+
+```bash
+# Use a config file from a different location
+agentflow compare --baseline @baseline --current @current \
+  --config /shared/configs/my-agent.yml
+
+# Use a sources directory from a different location
+agentflow compare --baseline @baseline --current @current \
+  --sources /shared/configs/sources/
+
+# Both together
+agentflow compare --baseline @baseline --current @current \
+  --config /shared/configs/my-agent.yml \
+  --sources /shared/configs/sources/
+```
+
+`--config` must be a file. `--sources` must be a directory. Both error immediately if the path does not exist or is the wrong type.
+
 ### Threshold gates
 
 Thresholds make `agentflow compare` exit with code 1 when a condition is violated. Use them in CI to enforce quality standards.
@@ -158,7 +179,7 @@ Available threshold fields:
 
 ## Configuration
 
-### `config/compare.yml` — metrics and gates
+### `config/compare.yml` — metrics and gates (`--config` to override)
 
 Controls which metrics run and what thresholds are enforced.
 
@@ -182,7 +203,7 @@ require:
 
 Omit `metrics` entirely to run all built-in metrics. Omit `require` for no gates.
 
-### `config/sources/` — named pull registry
+### `config/sources/` — named pull registry (`--sources` to override)
 
 Each `.yml` file in this directory defines named sources. All files are merged automatically — you can split them by project, environment, or team.
 
