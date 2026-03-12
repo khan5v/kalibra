@@ -121,13 +121,21 @@ agentflow pull --source langfuse --since 7d --session experiment-42
 Tag and session filters can also be set in source configs:
 
 ```yaml
-# config/sources/production.yml
+# config/sources/production.yml — Langfuse
 baseline:
   source: langfuse
   project: my-agent
   since: 7d
   tags: [agentflow, baseline]
   session: experiment-42
+
+# config/sources/synth-langsmith.yml — LangSmith
+ls-baseline:
+  source: langsmith
+  project: agentflow-synth      # LangSmith project name
+  since: 7d
+  limit: 500
+  tags: [agentflow, baseline]
 ```
 
 All remote requests use exponential backoff (5 retries) on rate limits, server errors, and connection failures.
@@ -135,7 +143,7 @@ All remote requests use exponential backoff (5 retries) on rate limits, server e
 | Service | Environment variables |
 |---|---|
 | Langfuse | `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` |
-| LangSmith | `LANGSMITH_API_KEY` |
+| LangSmith | `LANGSMITH_API_KEY`, `LANGSMITH_API_URL` (optional) |
 
 ---
 
@@ -190,7 +198,7 @@ Omit `metrics` to run all built-ins. Omit `require` for no gates.
 ### `config/sources/*.yml`
 
 ```yaml
-# config/sources/production.yml
+# config/sources/production.yml — Langfuse
 prod-baseline:
   source: langfuse
   project: my-agent
@@ -202,6 +210,21 @@ prod-current:
   project: my-agent
   since: 7d
   tags: [production, v2]
+```
+
+```yaml
+# config/sources/synth-langsmith.yml — LangSmith
+ls-baseline:
+  source: langsmith
+  project: synth
+  since: 7d
+  tags: [agentflow, baseline]
+
+ls-current:
+  source: langsmith
+  project: synth
+  since: 7d
+  tags: [agentflow, current]
 ```
 
 Override locations: `--config /path/to/compare.yml`, `--sources /path/to/sources/`.
@@ -273,6 +296,27 @@ AgentFlow reads:
 - **Langfuse** / **LangSmith** — via connectors with `agentflow pull`
 
 Internally, all traces are OTel `ReadableSpan` trees using [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
+
+---
+
+## Synthetic trace generator
+
+Generate realistic test traces calibrated against real SWE-bench data:
+
+```bash
+# Langfuse
+python3 scripts/synth_traces.py --mode baseline --target langfuse
+python3 scripts/synth_traces.py --mode current  --target langfuse
+
+# LangSmith
+python3 scripts/synth_traces.py --mode baseline --target langsmith --project synth
+python3 scripts/synth_traces.py --mode current  --target langsmith --project synth
+
+# Custom count and tags
+python3 scripts/synth_traces.py --mode baseline --target langsmith --count 50 --tags myteam,v2
+```
+
+Flags: `--count N` overrides the default trace count, `--tags a,b,c` sets comma-separated tags (default: `agentflow,<mode>`).
 
 ---
 

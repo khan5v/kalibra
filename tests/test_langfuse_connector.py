@@ -167,15 +167,10 @@ def test_iter_traces_single_page():
         "data": [RAW_TRACE],
         "meta": {"totalPages": 1, "totalItems": 1},
     })
-    trace_detail = _make_httpx_response({**RAW_TRACE, "observations": []})
 
-    httpx = MagicMock()
-    httpx.get.side_effect = [page1, trace_detail]
-
-    with patch("time.sleep"):
-        traces = CONNECTOR.fetch.__wrapped__ if hasattr(CONNECTOR.fetch, "__wrapped__") else None
-        # Call fetch directly via _iter_traces + _convert
-        items = list(CONNECTOR._iter_traces(httpx, "2026-01-01T00:00:00Z", limit=100))
+    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx:
+        mock_httpx.get.side_effect = [page1]
+        items = list(CONNECTOR._iter_traces("2026-01-01T00:00:00Z", limit=100))
 
     assert len(items) == 1
     assert items[0][0]["id"] == "trace-001"
@@ -186,10 +181,10 @@ def test_iter_traces_respects_limit():
                   for i in range(50)]
     page1 = _make_httpx_response({"data": items_page, "meta": {"totalPages": 3}})
 
-    httpx = MagicMock()
-    httpx.get.return_value = page1
+    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx:
+        mock_httpx.get.return_value = page1
+        result = list(CONNECTOR._iter_traces("2026-01-01T00:00:00Z", limit=10))
 
-    result = list(CONNECTOR._iter_traces(httpx, "2026-01-01T00:00:00Z", limit=10))
     assert len(result) == 10
 
 
@@ -200,14 +195,13 @@ def test_get_retries_on_429():
 
     success = _make_httpx_response({"data": [], "meta": {"totalPages": 1}})
 
-    httpx = MagicMock()
-    httpx.get.side_effect = [rate_limited, success]
-
-    with patch("time.sleep"):
-        result = CONNECTOR._get(httpx, f"{HOST}/api/public/traces", {})
+    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx, \
+         patch("time.sleep"):
+        mock_httpx.get.side_effect = [rate_limited, success]
+        result = CONNECTOR._get(f"{HOST}/api/public/traces", {})
 
     assert result == {"data": [], "meta": {"totalPages": 1}}
-    assert httpx.get.call_count == 2
+    assert mock_httpx.get.call_count == 2
 
 
 def test_get_raises_after_five_429s():
@@ -215,12 +209,11 @@ def test_get_raises_after_five_429s():
     rate_limited.headers = {}
     rate_limited.raise_for_status = MagicMock()
 
-    httpx = MagicMock()
-    httpx.get.return_value = rate_limited
-
-    with patch("time.sleep"):
+    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx, \
+         patch("time.sleep"):
+        mock_httpx.get.return_value = rate_limited
         with pytest.raises(RuntimeError, match="rate limit exceeded"):
-            CONNECTOR._get(httpx, f"{HOST}/api/public/traces", {})
+            CONNECTOR._get(f"{HOST}/api/public/traces", {})
 
 
 def test_fetch_trace_observations_uses_detail_endpoint():
@@ -228,15 +221,14 @@ def test_fetch_trace_observations_uses_detail_endpoint():
         **RAW_TRACE,
         "observations": [OBSERVATION],
     })
-    httpx = MagicMock()
-    httpx.get.return_value = detail_response
 
-    obs = CONNECTOR._fetch_trace_observations(httpx, "trace-001")
+    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx:
+        mock_httpx.get.return_value = detail_response
+        obs = CONNECTOR._fetch_trace_observations("trace-001")
 
     assert len(obs) == 1
     assert obs[0]["id"] == "obs-001"
-    # Verify it called the detail endpoint, NOT the /observations?traceId= endpoint
-    called_url = httpx.get.call_args[0][0]
+    called_url = mock_httpx.get.call_args[0][0]
     assert "/api/public/traces/trace-001" in called_url
     assert "observations?" not in called_url
 
@@ -251,8 +243,9 @@ def test_fetch_returns_traces_with_correct_outcomes():
     detail_success = _make_httpx_response({**RAW_TRACE, "observations": [OBSERVATION]})
     detail_failure = _make_httpx_response({**RAW_TRACE_FAILURE, "observations": []})
 
-    with patch("httpx.get", side_effect=[traces_page, detail_success, detail_failure]), \
+    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx, \
          patch("time.sleep"):
+        mock_httpx.get.side_effect = [traces_page, detail_success, detail_failure]
         traces = CONNECTOR.fetch(since=None, limit=10, progress=False)
 
     assert len(traces) == 2

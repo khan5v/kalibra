@@ -6,6 +6,9 @@ import hashlib
 import time
 from datetime import datetime, timedelta, timezone
 
+from langsmith import Client
+from langsmith.utils import LangSmithError, LangSmithRateLimitError
+
 from agentflow.converters.base import (
     AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_MODEL, GEN_AI_OUTPUT_TOKENS,
     Trace, make_span,
@@ -20,6 +23,8 @@ class LangSmithConnector:
         LANGSMITH_API_URL   default: https://api.smith.langchain.com
     """
 
+    MAX_RETRIES = 5
+
     def __init__(self, api_key: str, api_url: str | None = None):
         self.api_key = api_key
         self.api_url = api_url or "https://api.smith.langchain.com"
@@ -30,46 +35,110 @@ class LangSmithConnector:
         since: datetime | None = None,
         limit: int = 5000,
         progress: bool = True,
+        tags: list[str] | None = None,
+        session_id: str | None = None,
     ) -> list[Trace]:
         """Fetch root runs from LangSmith and convert to agentflow Traces."""
-        try:
-            from langsmith import Client
-        except ImportError:
-            raise ImportError(
-                "langsmith package is required: pip install 'agentflow[langsmith]'"
-            )
-
-        client = Client(api_key=self.api_key, api_url=self.api_url)
+        client = self._make_client()
         since = since or (datetime.now(timezone.utc) - timedelta(days=7))
 
-        traces = []
+        traces: list[Trace] = []
         fetched = 0
 
+        # Build filter string for tag/session filtering
+        filter_str = self._build_filter(tags=tags, session_id=session_id)
+
         # List root runs only (no parent) — each is a trace
-        runs = client.list_runs(
-            project_name=project_name,
-            start_time=since,
-            is_root=True,
-            limit=limit,
+        runs = self._retry(
+            lambda: client.list_runs(
+                project_name=project_name,
+                start_time=since,
+                is_root=True,
+                limit=limit,
+                filter=filter_str or None,
+            ),
+            "list root runs",
         )
 
+        if progress:
+            print(f"  Fetching up to {limit:,} traces from LangSmith...")
+
         for run in runs:
-            child_runs = list(client.list_runs(
-                project_name=project_name,
-                parent_run_id=str(run.id),
+            child_runs = list(self._retry(
+                lambda r=run: client.list_runs(
+                    project_name=project_name,
+                    parent_run_id=str(r.id),
+                ),
+                f"list children of {run.id}",
             ))
             trace = self._convert(run, child_runs)
             if trace:
                 traces.append(trace)
             fetched += 1
-            if progress and fetched % 100 == 0:
-                print(f"  Fetched {fetched} traces from LangSmith...")
+            if progress and (fetched % 5 == 0):
+                print(f"  Fetched {fetched} traces...")
             if fetched >= limit:
                 break
 
         if progress:
             print(f"  Done. {len(traces)} traces fetched from LangSmith.")
         return traces
+
+    def _make_client(self) -> Client:
+        return Client(api_key=self.api_key, api_url=self.api_url)
+
+    def _retry(self, fn, description: str = "request"):
+        """Call *fn* with exponential backoff on rate limits and server errors."""
+        delay = 1.0
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                return fn()
+            except LangSmithRateLimitError:
+                if attempt == self.MAX_RETRIES - 1:
+                    raise RuntimeError(
+                        f"LangSmith rate limit exceeded after {self.MAX_RETRIES} retries ({description})"
+                    )
+                print(f"  Rate limited ({description}) — waiting {delay:.0f}s...")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+            except LangSmithError as exc:
+                if attempt == self.MAX_RETRIES - 1:
+                    raise RuntimeError(
+                        f"LangSmith request failed after {self.MAX_RETRIES} retries ({description}): {exc}"
+                    )
+                print(f"  LangSmith error ({description}, attempt {attempt + 1}/{self.MAX_RETRIES}) — retrying in {delay:.0f}s...")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+            except (ConnectionError, TimeoutError, OSError) as exc:
+                if attempt == self.MAX_RETRIES - 1:
+                    raise RuntimeError(
+                        f"LangSmith connection failed after {self.MAX_RETRIES} retries ({description}): {exc}"
+                    )
+                print(f"  Connection error ({description}, attempt {attempt + 1}/{self.MAX_RETRIES}) — retrying in {delay:.0f}s...")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+
+    @staticmethod
+    def _build_filter(
+        tags: list[str] | None = None,
+        session_id: str | None = None,
+    ) -> str:
+        """Build a LangSmith filter string for list_runs.
+
+        LangSmith filter syntax:
+          has(tags, "foo")          — run has tag "foo"
+          eq(session_id, "bar")    — run belongs to session "bar"
+        Multiple clauses are ANDed with 'and'.
+        """
+        clauses: list[str] = []
+        if tags:
+            for tag in tags:
+                clauses.append(f'has(tags, "{tag}")')
+        if session_id:
+            clauses.append(f'eq(session_id, "{session_id}")')
+        if len(clauses) <= 1:
+            return clauses[0] if clauses else ""
+        return f"and({', '.join(clauses)})"
 
     def _convert(self, run, child_runs: list) -> Trace | None:
         """Convert a LangSmith root run + children → agentflow Trace."""
@@ -84,6 +153,17 @@ class LangSmithConnector:
             score = run.feedback_stats.get("score", {}).get("avg")
             if score is not None:
                 outcome = "success" if score >= 0.5 else "failure"
+        else:
+            # Heuristic: check output for outcome keywords
+            output = run.outputs or {}
+            if isinstance(output, dict):
+                out_str = str(output).lower()
+            else:
+                out_str = str(output).lower()
+            if "success" in out_str:
+                outcome = "success"
+            elif any(kw in out_str for kw in ("failure", "error", "failed", "exception")):
+                outcome = "failure"
 
         # Build spans from child runs
         spans = [self._run_to_span(trace_id, run, is_root=True)]
@@ -104,6 +184,7 @@ class LangSmithConnector:
                 "name": run.name or "",
                 "project": getattr(run, "session_name", "") or "",
                 "tags": list(run.tags or []),
+                "session_id": str(getattr(run, "session_id", "") or ""),
             },
         )
 
@@ -123,6 +204,11 @@ class LangSmithConnector:
         invocation_params = extra.get("invocation_params", {})
         if invocation_params:
             model = invocation_params.get("model_name") or invocation_params.get("model")
+        # Fallback: check serialized kwargs
+        if not model:
+            serialized = extra.get("metadata", {})
+            if isinstance(serialized, dict):
+                model = serialized.get("ls_model_name")
 
         # Parent: compute span ID the same way (md5 of trace_id:parent_run_id)
         parent_run_id = str(run.parent_run_id) if run.parent_run_id else None
@@ -136,7 +222,9 @@ class LangSmithConnector:
             attrs[GEN_AI_MODEL] = model
         attrs[GEN_AI_INPUT_TOKENS]  = input_tokens
         attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
-        attrs[AF_COST]              = 0.0
+        # LangSmith doesn't expose cost natively — read from extra.metadata.agentflow_cost
+        metadata = extra.get("metadata", {}) if isinstance(extra, dict) else {}
+        attrs[AF_COST] = float(metadata.get("agentflow_cost", 0.0))
 
         return make_span(
             name=name,

@@ -219,15 +219,18 @@ def _do_pull(source: str, project: str, since: str, limit: int, output: str,
         extra += f", session: {session_id}"
     click.echo(f"Connecting to {source} (project: {project}, since: {since}{extra})...")
     connector = get_connector(source)
-    fetch_kwargs: dict = dict(
-        project_id=project, since=parse_since(since), limit=limit, progress=True,
-    )
-    # Langfuse supports tag/session filtering; other connectors ignore these.
-    if source == "langfuse":
-        if tags:
-            fetch_kwargs["tags"] = tags
-        if session_id:
-            fetch_kwargs["session_id"] = session_id
+    # Langfuse uses project_id; LangSmith uses project_name — both accept as first positional
+    project_key = "project_id" if source == "langfuse" else "project_name"
+    fetch_kwargs: dict = {
+        project_key: project,
+        "since": parse_since(since),
+        "limit": limit,
+        "progress": True,
+    }
+    if tags:
+        fetch_kwargs["tags"] = tags
+    if session_id:
+        fetch_kwargs["session_id"] = session_id
     traces = connector.fetch(**fetch_kwargs)
     click.echo(f"Fetched {len(traces):,} traces.")
     save_jsonl(traces, output)

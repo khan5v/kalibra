@@ -7,6 +7,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Generator
 
+import httpx
+
 from agentflow.converters.base import (
     AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_MODEL, GEN_AI_OUTPUT_TOKENS,
     Trace, make_span,
@@ -36,11 +38,6 @@ class LangfuseConnector:
         session_id: str | None = None,
     ) -> list[Trace]:
         """Fetch traces from Langfuse and convert to agentflow Trace objects."""
-        try:
-            import httpx
-        except ImportError:
-            raise ImportError("httpx is required for the Langfuse connector: pip install httpx")
-
         since = since or (datetime.now(timezone.utc) - timedelta(days=7))
         since_str = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -48,13 +45,13 @@ class LangfuseConnector:
         fetched = 0
         total_available: int | None = None
 
-        for raw_trace, total in self._iter_traces(httpx, since_str, limit, tags=tags, session_id=session_id):
+        for raw_trace, total in self._iter_traces(since_str, limit, tags=tags, session_id=session_id):
             if total_available is None:
                 total_available = total
                 effective_total = min(total, limit)
                 if progress:
                     print(f"  Found {total:,} traces in Langfuse (fetching up to {effective_total:,})...")
-            observations = self._fetch_trace_observations(httpx, raw_trace["id"])
+            observations = self._fetch_trace_observations(raw_trace["id"])
             trace = self._convert(raw_trace, observations)
             if trace:
                 traces.append(trace)
@@ -69,7 +66,7 @@ class LangfuseConnector:
             print(f"  Done. {len(traces)} traces fetched from Langfuse.")
         return traces
 
-    def _get(self, httpx, url: str, params: dict) -> dict:
+    def _get(self, url: str, params: dict) -> dict:
         """GET with exponential backoff on 429, 5xx, and connection errors."""
         delay = 1.0
         max_retries = 5
@@ -106,7 +103,6 @@ class LangfuseConnector:
 
     def _iter_traces(
         self,
-        httpx,
         since_str: str,
         limit: int,
         tags: list[str] | None = None,
@@ -122,7 +118,6 @@ class LangfuseConnector:
             if session_id:
                 params["sessionId"] = session_id
             data = self._get(
-                httpx,
                 f"{self.host}/api/public/traces",
                 params,
             )
@@ -140,7 +135,7 @@ class LangfuseConnector:
                 break
             page += 1
 
-    def _fetch_trace_observations(self, httpx, trace_id: str) -> list[dict]:
+    def _fetch_trace_observations(self, trace_id: str) -> list[dict]:
         """Fetch observations for a trace via the individual trace detail endpoint.
 
         Uses GET /api/public/traces/{traceId} which returns observations inline —
@@ -148,7 +143,6 @@ class LangfuseConnector:
         Langfuse's free tier.
         """
         data = self._get(
-            httpx,
             f"{self.host}/api/public/traces/{trace_id}",
             {},
         )

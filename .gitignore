@@ -13,5 +13,4 @@ build/
 context/
 cached_sources/*
 data/
-scripts/
 *.jsonl

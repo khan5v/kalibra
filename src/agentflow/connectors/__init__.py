@@ -23,6 +23,7 @@ def get_connector(source: str):
         api_key = os.environ.get("LANGSMITH_API_KEY", "")
         if not api_key:
             raise RuntimeError("Set LANGSMITH_API_KEY environment variable.")
-        return LangSmithConnector(api_key=api_key)
+        api_url = os.environ.get("LANGSMITH_API_URL") or None
+        return LangSmithConnector(api_key=api_key, api_url=api_url)
 
     raise ValueError(f"Unknown source: {source!r}. Supported: langfuse, langsmith")
