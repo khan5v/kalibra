@@ -165,7 +165,7 @@ def _mock_get_side_effect(responses: list):
 def test_iter_traces_single_page():
     page1 = _make_httpx_response({
         "data": [RAW_TRACE],
-        "meta": {"totalPages": 1},
+        "meta": {"totalPages": 1, "totalItems": 1},
     })
     trace_detail = _make_httpx_response({**RAW_TRACE, "observations": []})
 
@@ -178,7 +178,7 @@ def test_iter_traces_single_page():
         items = list(CONNECTOR._iter_traces(httpx, "2026-01-01T00:00:00Z", limit=100))
 
     assert len(items) == 1
-    assert items[0]["id"] == "trace-001"
+    assert items[0][0]["id"] == "trace-001"
 
 
 def test_iter_traces_respects_limit():

@@ -8,10 +8,12 @@
 #   agentflow pull @current --refresh          # force re-pull, bypass cache
 #
 # Fields per source:
-#   source:  langfuse | langsmith
-#   project: project name / ID in the trace store
-#   since:   7d, 24h, 30m, or ISO date (2026-01-01)
-#   limit:   max traces to fetch (default: 5000)
+#   source:   langfuse | langsmith
+#   project:  project name / ID in the trace store
+#   since:    7d, 24h, 30m, or ISO date (2026-01-01)
+#   limit:    max traces to fetch (default: 5000)
+#   tags:     list of tags to filter by (Langfuse)
+#   session:  session ID to filter by (Langfuse)
 #
 # Cache: always written to cached_sources/<name>.jsonl
 #
@@ -19,14 +21,16 @@
 #   Langfuse:   LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
 #   LangSmith:  LANGSMITH_API_KEY
 
-current:
-  source: langfuse
-  project: synth
-  since: 40m
-  limit: 10
-
 baseline:
   source: langfuse
   project: synth
-  since: 25m
-  limit: 10
+  since: 7d
+  limit: 500
+  tags: [agentflow, baseline]
+
+current:
+  source: langfuse
+  project: synth
+  since: 7d
+  limit: 500
+  tags: [agentflow, current]

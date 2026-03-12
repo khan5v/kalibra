@@ -29,14 +29,21 @@ class SourceConfig:
     project: str
     since: str = "7d"
     limit: int = 5000
+    tags: list[str] = field(default_factory=list)
+    session: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "SourceConfig":
+        raw_tags = data.get("tags") or []
+        if isinstance(raw_tags, str):
+            raw_tags = [raw_tags]
         return cls(
             source=data["source"],
             project=data["project"],
             since=str(data.get("since", "7d")),
             limit=int(data.get("limit", 5000)),
+            tags=[str(t) for t in raw_tags],
+            session=data.get("session") or None,
         )
 
 

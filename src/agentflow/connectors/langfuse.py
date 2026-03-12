@@ -32,6 +32,8 @@ class LangfuseConnector:
         since: datetime | None = None,
         limit: int = 5000,
         progress: bool = True,
+        tags: list[str] | None = None,
+        session_id: str | None = None,
     ) -> list[Trace]:
         """Fetch traces from Langfuse and convert to agentflow Trace objects."""
         try:
@@ -44,15 +46,21 @@ class LangfuseConnector:
 
         traces = []
         fetched = 0
+        total_available: int | None = None
 
-        for raw_trace in self._iter_traces(httpx, since_str, limit):
+        for raw_trace, total in self._iter_traces(httpx, since_str, limit, tags=tags, session_id=session_id):
+            if total_available is None:
+                total_available = total
+                effective_total = min(total, limit)
+                if progress:
+                    print(f"  Found {total:,} traces in Langfuse (fetching up to {effective_total:,})...")
             observations = self._fetch_trace_observations(httpx, raw_trace["id"])
             trace = self._convert(raw_trace, observations)
             if trace:
                 traces.append(trace)
             fetched += 1
-            if progress and fetched % 100 == 0:
-                print(f"  Fetched {fetched} traces from Langfuse...")
+            if progress and (fetched % 5 == 0 or fetched == effective_total):
+                print(f"  Fetched {fetched}/{effective_total} traces...")
             time.sleep(0.05)  # 50ms between observation fetches to stay under rate limit
             if fetched >= limit:
                 break
@@ -62,10 +70,20 @@ class LangfuseConnector:
         return traces
 
     def _get(self, httpx, url: str, params: dict) -> dict:
-        """GET with exponential backoff on 429."""
+        """GET with exponential backoff on 429, 5xx, and connection errors."""
         delay = 1.0
-        for attempt in range(5):
-            resp = httpx.get(url, auth=self.auth, params=params, timeout=30)
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                resp = httpx.get(url, auth=self.auth, params=params, timeout=30)
+            except (httpx.ConnectError, httpx.TimeoutException, OSError) as exc:
+                if attempt == max_retries - 1:
+                    raise RuntimeError(f"Langfuse request failed after {max_retries} retries: {exc}")
+                print(f"  Connection error (attempt {attempt + 1}/{max_retries}) — retrying in {delay:.0f}s...")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+                continue
+
             if resp.status_code == 429:
                 retry_after = float(resp.headers.get("Retry-After", delay))
                 wait = max(retry_after, delay)
@@ -73,28 +91,51 @@ class LangfuseConnector:
                 time.sleep(wait)
                 delay = min(delay * 2, 60)
                 continue
+
+            if resp.status_code >= 500:
+                if attempt == max_retries - 1:
+                    resp.raise_for_status()
+                print(f"  Server error {resp.status_code} (attempt {attempt + 1}/{max_retries}) — retrying in {delay:.0f}s...")
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+                continue
+
             resp.raise_for_status()
             return resp.json()
-        raise RuntimeError("Langfuse rate limit exceeded after 5 retries")
+        raise RuntimeError(f"Langfuse rate limit exceeded after {max_retries} retries")
 
-    def _iter_traces(self, httpx, since_str: str, limit: int) -> Generator[dict, None, None]:
+    def _iter_traces(
+        self,
+        httpx,
+        since_str: str,
+        limit: int,
+        tags: list[str] | None = None,
+        session_id: str | None = None,
+    ) -> Generator[tuple[dict, int], None, None]:
+        """Yield (trace_dict, total_items) tuples."""
         page = 1
         total_yielded = 0
         while True:
+            params: dict = {"page": page, "limit": 50, "fromTimestamp": since_str}
+            if tags:
+                params["tags"] = tags
+            if session_id:
+                params["sessionId"] = session_id
             data = self._get(
                 httpx,
                 f"{self.host}/api/public/traces",
-                {"page": page, "limit": 50, "fromTimestamp": since_str},
+                params,
             )
             items = data.get("data", [])
+            meta = data.get("meta", {})
+            total_items = meta.get("totalItems", 0)
             if not items:
                 break
             for item in items:
-                yield item
+                yield item, total_items
                 total_yielded += 1
                 if total_yielded >= limit:
                     return
-            meta = data.get("meta", {})
             if page >= meta.get("totalPages", 1):
                 break
             page += 1

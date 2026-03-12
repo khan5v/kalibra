@@ -1,0 +1,21 @@
+# Cost control — enforce budget limits on agent runs.
+#
+# Usage:
+#   agentflow compare --baseline @baseline --current @current \
+#     --config config/examples/cost-control.yml
+#
+# Gates on absolute cost and token limits. Useful when you have a
+# fixed budget per eval run or per-task spending cap.
+
+metrics:
+  - cost
+  - cost_quality
+  - token_usage
+  - token_efficiency
+  - success_rate
+
+require:
+  - total_cost <= 50                # eval run must cost less than $50
+  - avg_cost <= 0.05                # average trace under $0.05
+  - cost_per_success <= 0.10        # at most $0.10 per successful task
+  - avg_tokens <= 5000              # average tokens per trace under 5k

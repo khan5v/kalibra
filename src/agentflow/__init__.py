@@ -33,7 +33,10 @@ from agentflow.compare import CompareResult, ComparisonResult, ValidationResult,
 from agentflow.config import CompareConfig
 from agentflow.converters.base import Trace, make_span
 from opentelemetry.sdk.trace import ReadableSpan
-from agentflow.metrics import ComparisonMetric, Direction, Observation, MetricResult
+from agentflow.metrics import (
+    ComparisonMetric, CostQualityMetric, Direction, Observation, MetricResult,
+    TokenEfficiencyMetric, TokenUsageMetric,
+)
 
 __all__ = [
     # Entry points
@@ -56,4 +59,8 @@ __all__ = [
     "make_span",
     # Extension point
     "ComparisonMetric",
+    # New metrics
+    "TokenUsageMetric",
+    "TokenEfficiencyMetric",
+    "CostQualityMetric",
 ]

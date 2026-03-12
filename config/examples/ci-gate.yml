@@ -1,0 +1,22 @@
+# CI quality gate — block merges when the agent regresses.
+#
+# Usage:
+#   agentflow compare --baseline @baseline --current @current \
+#     --config config/examples/ci-gate.yml
+#
+# Designed for GitHub Actions / CI pipelines. Exits with code 1
+# on any threshold violation, so a failing gate blocks the PR.
+
+metrics:
+  - success_rate
+  - per_task
+  - cost
+  - duration
+  - token_usage
+
+require:
+  - success_rate_delta >= -2        # at most 2 pp success rate drop
+  - regressions <= 5                # at most 5 tasks flipped success → failure
+  - cost_delta_pct <= 20            # at most 20% cost increase
+  - duration_p95_delta_pct <= 30    # at most 30% P95 latency increase
+  - token_delta_pct <= 25           # at most 25% token increase

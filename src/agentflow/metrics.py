@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import random
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
@@ -10,7 +11,7 @@ from enum import Enum
 from typing import Any, ClassVar
 
 from agentflow.collection import TraceCollection
-from agentflow.converters.base import span_is_error
+from agentflow.converters.base import span_input_tokens, span_is_error, span_output_tokens
 
 # Minimum sample sizes for reliable metric computation.
 _MIN_N = 30       # below this, any metric is suspect
@@ -39,7 +40,8 @@ class Observation:
     baseline: Any                        # raw summary from summarize()
     current: Any                         # raw summary from summarize()
     delta: float | None = None           # primary scalar delta (pp or %)
-    formatted: str = ""                  # one-line human-readable summary
+    formatted: str = ""                  # headline: delta + primary comparison
+    detail_lines: list[str] = field(default_factory=list)  # sub-lines for breakdown
     metadata: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
@@ -249,28 +251,35 @@ class PerTaskMetric(ComparisonMetric):
                 "matched": len(matched),
                 "regressions":  regressions[:20],
                 "improvements": improvements[:20],
+                "n_regressions":  len(regressions),
+                "n_improvements": len(improvements),
             },
             warnings=warnings,
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
-            "regressions":  len(result.metadata["regressions"]),
-            "improvements": len(result.metadata["improvements"]),
+            "regressions":  result.metadata["n_regressions"],
+            "improvements": result.metadata["n_improvements"],
         }
 
 
 class CostMetric(ComparisonMetric):
     name = "cost"
-    description = "Average cost per trace"
+    description = "Cost per trace — median, average, and total"
     noise_threshold = 3.0
     higher_is_better = False
 
     def summarize(self, col: TraceCollection) -> dict:
         costs = [t.total_cost for t in col.all_traces()]
+        p25, med, p75 = _iqr(costs)
         return {
             "avg": _mean(costs),
+            "median": med,
+            "p25": p25,
+            "p75": p75,
             "total": sum(costs),
+            "ci_95": _bootstrap_ci(costs, stat_fn=_median) if len(costs) >= 2 else None,
             "all_zero": all(c == 0.0 for c in costs),
             "n": len(costs),
         }
@@ -287,70 +296,130 @@ class CostMetric(ComparisonMetric):
                 warnings=warnings,
             )
 
-        delta = _pct_delta(baseline["avg"], current["avg"])
-        sign = "+" if delta >= 0 else ""
-        formatted = f"${baseline['avg']:.4f} → ${current['avg']:.4f}  {sign}{delta:.1f}%"
-        direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
+        # Primary stat: median (robust to outliers). Delta computed on median.
+        med_delta = _pct_delta(baseline["median"], current["median"])
+        avg_delta = _pct_delta(baseline["avg"], current["avg"])
+        sign = "+" if med_delta >= 0 else ""
+        formatted = f"${baseline['median']:.4f} → ${current['median']:.4f} median  {sign}{med_delta:.1f}%"
+
+        details = [
+            f"${baseline['avg']:.4f} → ${current['avg']:.4f} avg  {'+'if avg_delta>=0 else ''}{avg_delta:.1f}%",
+            f"${baseline['total']:.2f} → ${current['total']:.2f} total",
+        ]
+        if current["ci_95"] and baseline["ci_95"]:
+            ci_lo = _pct_delta(baseline["median"], current["ci_95"][0])
+            ci_hi = _pct_delta(baseline["median"], current["ci_95"][1])
+            if ci_lo != ci_hi:
+                details.append(f"95% CI [{ci_lo:+.1f}%, {ci_hi:+.1f}%]")
+
+        direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
         return Observation(
             name=self.name, description=self.description,
             direction=direction,
             baseline=baseline, current=current,
-            delta=delta, formatted=formatted,
+            delta=med_delta, formatted=formatted,
+            detail_lines=details,
+            metadata={"avg_delta": avg_delta, "ci_95": current["ci_95"], "baseline_ci_95": baseline["ci_95"]},
             warnings=warnings,
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
-        if result.delta is None:
-            return {}
-        return {"cost_delta_pct": result.delta}
+        fields: dict[str, float] = {}
+        if result.delta is not None:
+            fields["cost_delta_pct"] = result.delta
+        fields["total_cost"] = result.current["total"]
+        fields["avg_cost"] = result.current["avg"]
+        return fields
 
 
 class StepsMetric(ComparisonMetric):
     name = "steps"
-    description = "Average steps (spans) per trace"
+    description = "Steps (spans) per trace — median and average"
     noise_threshold = 3.0
     higher_is_better = False
 
     def summarize(self, col: TraceCollection) -> dict:
-        steps = [len(t.spans) for t in col.all_traces()]
-        return {"avg": _mean(steps), "n": len(steps)}
+        steps = [float(len(t.spans)) for t in col.all_traces()]
+        return {
+            "avg": _mean(steps),
+            "median": _median(steps),
+            "ci_95": _bootstrap_ci(steps, stat_fn=_median) if len(steps) >= 2 else None,
+            "n": len(steps),
+        }
 
     def compare(self, baseline: dict, current: dict) -> Observation:
-        delta = _pct_delta(baseline["avg"], current["avg"])
-        sign = "+" if delta >= 0 else ""
-        formatted = f"{baseline['avg']:.1f} → {current['avg']:.1f} steps  {sign}{delta:.1f}%"
-        direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
+        med_delta = _pct_delta(baseline["median"], current["median"])
+        avg_delta = _pct_delta(baseline["avg"], current["avg"])
+        sign = "+" if med_delta >= 0 else ""
+        formatted = f"{baseline['median']:.0f} → {current['median']:.0f} steps/trace (median)  {sign}{med_delta:.1f}%"
+
+        details = [
+            f"{baseline['avg']:.1f} → {current['avg']:.1f} avg  {'+'if avg_delta>=0 else ''}{avg_delta:.1f}%",
+        ]
+        if current["ci_95"] and baseline["ci_95"]:
+            ci_lo = _pct_delta(baseline["median"], current["ci_95"][0])
+            ci_hi = _pct_delta(baseline["median"], current["ci_95"][1])
+            if ci_lo != ci_hi:
+                details.append(f"95% CI [{ci_lo:+.1f}%, {ci_hi:+.1f}%]")
+
+        direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
         return Observation(
             name=self.name, description=self.description,
             direction=direction,
             baseline=baseline, current=current,
-            delta=delta, formatted=formatted,
+            delta=med_delta, formatted=formatted,
+            detail_lines=details,
+            metadata={"avg_delta": avg_delta, "ci_95": current["ci_95"], "baseline_ci_95": baseline["ci_95"]},
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
-        return {"steps_delta_pct": result.delta}
+        return {
+            "steps_delta_pct": result.delta,
+            "avg_steps": result.current["avg"],
+            "median_steps": result.current["median"],
+        }
 
 
 class DurationMetric(ComparisonMetric):
     name = "duration"
-    description = "Trace duration — average and P95 latency"
+    description = "Trace duration — average, median, and P95 latency"
     noise_threshold = 5.0
     higher_is_better = False
 
     def summarize(self, col: TraceCollection) -> dict:
-        durations = sorted(t.duration for t in col.all_traces())
-        return {"avg": _mean(durations), "p95": _percentile(durations, 95), "n": len(durations)}
+        durations = [t.duration for t in col.all_traces()]
+        sorted_d = sorted(durations)
+        p25, med, p75 = _iqr(durations)
+        return {
+            "avg": _mean(durations),
+            "median": med,
+            "p25": p25,
+            "p75": p75,
+            "p95": _percentile(sorted_d, 95),
+            "total": sum(durations),
+            "ci_95": _bootstrap_ci(durations, stat_fn=_median) if len(durations) >= 2 else None,
+            "n": len(durations),
+        }
 
     def compare(self, baseline: dict, current: dict) -> Observation:
         warnings: list[str] = []
         avg_delta = _pct_delta(baseline["avg"], current["avg"])
+        med_delta = _pct_delta(baseline["median"], current["median"])
         p95_delta = _pct_delta(baseline["p95"], current["p95"])
-        sign_avg = "+" if avg_delta >= 0 else ""
-        sign_p95 = "+" if p95_delta >= 0 else ""
-        formatted = (
-            f"avg {baseline['avg']:.1f}s → {current['avg']:.1f}s  {sign_avg}{avg_delta:.1f}%  |  "
-            f"P95 {baseline['p95']:.1f}s → {current['p95']:.1f}s  {sign_p95}{p95_delta:.1f}%"
-        )
+
+        # Primary stat: median (robust to tail outliers)
+        sign = "+" if med_delta >= 0 else ""
+        formatted = f"{baseline['median']:.1f}s → {current['median']:.1f}s median  {sign}{med_delta:.1f}%"
+
+        details = [
+            f"{baseline['avg']:.1f}s → {current['avg']:.1f}s avg  {'+'if avg_delta>=0 else ''}{avg_delta:.1f}%",
+            f"{baseline['p95']:.1f}s → {current['p95']:.1f}s P95  {'+'if p95_delta>=0 else ''}{p95_delta:.1f}%",
+        ]
+        if current["ci_95"] and baseline["ci_95"]:
+            ci_lo = _pct_delta(baseline["median"], current["ci_95"][0])
+            ci_hi = _pct_delta(baseline["median"], current["ci_95"][1])
+            if ci_lo != ci_hi:
+                details.append(f"95% CI [{ci_lo:+.1f}%, {ci_hi:+.1f}%]")
 
         small_n = min(baseline["n"], current["n"])
         if small_n < _MIN_P95_N:
@@ -358,20 +427,29 @@ class DurationMetric(ComparisonMetric):
                 f"P95 computed from {small_n} traces — recommend ≥{_MIN_P95_N} for stable percentiles"
             )
 
-        direction = _direction_from_delta(avg_delta, self.noise_threshold, self.higher_is_better)
+        direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
         return Observation(
             name=self.name, description=self.description,
             direction=direction,
             baseline=baseline, current=current,
-            delta=avg_delta, formatted=formatted,
-            metadata={"p95_delta_pct": p95_delta},
+            delta=med_delta, formatted=formatted,
+            detail_lines=details,
+            metadata={
+                "avg_delta_pct": avg_delta,
+                "median_delta_pct": med_delta,
+                "p95_delta_pct": p95_delta,
+                "ci_95": current["ci_95"],
+                "baseline_ci_95": baseline["ci_95"],
+            },
             warnings=warnings,
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
-            "duration_delta_pct":     result.delta,
-            "duration_p95_delta_pct": result.metadata["p95_delta_pct"],
+            "duration_delta_pct":        result.delta,
+            "duration_median_delta_pct": result.metadata["median_delta_pct"],
+            "duration_p95_delta_pct":    result.metadata["p95_delta_pct"],
+            "total_duration":            result.current["total"],
         }
 
 
@@ -464,6 +542,202 @@ class PathDistributionMetric(ComparisonMetric):
         return {"path_jaccard": result.metadata["jaccard"]}
 
 
+class TokenUsageMetric(ComparisonMetric):
+    name = "token_usage"
+    description = "Token consumption — input, output, and total"
+    noise_threshold = 3.0
+    higher_is_better = False
+
+    def summarize(self, col: TraceCollection) -> dict:
+        traces = col.all_traces()
+        input_tok  = [sum(span_input_tokens(s) for s in t.spans) for t in traces]
+        output_tok = [sum(span_output_tokens(s) for s in t.spans) for t in traces]
+        totals = [i + o for i, o in zip(input_tok, output_tok)]
+        return {
+            "avg_input": _mean(input_tok),
+            "avg_output": _mean(output_tok),
+            "avg_total": _mean(totals),
+            "median_total": _median(totals),
+            "total": sum(totals),
+            "ci_95": _bootstrap_ci(totals, stat_fn=_median) if len(totals) >= 2 else None,
+            "all_zero": all(t == 0 for t in totals),
+            "n": len(traces),
+        }
+
+    def compare(self, baseline: dict, current: dict) -> Observation:
+        warnings: list[str] = []
+        if baseline["all_zero"] and current["all_zero"]:
+            warnings.append(
+                "All token counts are 0 — token data may not be populated in your traces"
+            )
+            return Observation(
+                name=self.name, description=self.description,
+                direction=Direction.NA,
+                baseline=baseline, current=current,
+                formatted="n/a — no token data",
+                warnings=warnings,
+            )
+
+        # Primary stat: median total tokens
+        med_delta = _pct_delta(baseline["median_total"], current["median_total"])
+        avg_delta = _pct_delta(baseline["avg_total"], current["avg_total"])
+        sign = "+" if med_delta >= 0 else ""
+        formatted = (
+            f"{baseline['median_total']:,.0f} → {current['median_total']:,.0f} tokens/trace (median)  "
+            f"{sign}{med_delta:.1f}%"
+        )
+        details = [
+            f"{baseline['avg_total']:,.0f} → {current['avg_total']:,.0f} avg  {'+'if avg_delta>=0 else ''}{avg_delta:.1f}%",
+            f"in: {baseline['avg_input']:,.0f} → {current['avg_input']:,.0f} avg  |  out: {baseline['avg_output']:,.0f} → {current['avg_output']:,.0f} avg",
+        ]
+        ci = current["ci_95"]
+        if ci and baseline["ci_95"]:
+            ci_lo = _pct_delta(baseline["median_total"], ci[0])
+            ci_hi = _pct_delta(baseline["median_total"], ci[1])
+            if ci_lo != ci_hi:
+                details.append(f"95% CI [{ci_lo:+.1f}%, {ci_hi:+.1f}%]")
+
+        direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
+        return Observation(
+            name=self.name, description=self.description,
+            direction=direction,
+            baseline=baseline, current=current,
+            delta=med_delta, formatted=formatted,
+            detail_lines=details,
+            metadata={
+                "avg_delta": avg_delta,
+                "ci_95": ci,
+                "baseline_ci_95": baseline["ci_95"],
+            },
+            warnings=warnings,
+        )
+
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
+        fields: dict[str, float] = {}
+        if result.delta is not None:
+            fields["token_delta_pct"] = result.delta
+        fields["total_tokens"] = result.current["total"]
+        fields["avg_tokens"] = result.current["avg_total"]
+        return fields
+
+
+class TokenEfficiencyMetric(ComparisonMetric):
+    name = "token_efficiency"
+    description = "Tokens per successful task"
+    noise_threshold = 5.0
+    higher_is_better = False
+
+    def summarize(self, col: TraceCollection) -> dict:
+        successes = [t for t in col.all_traces() if t.outcome == "success"]
+        if not successes:
+            return {"tokens_per_success": None, "n_successes": 0, "total_tokens": 0}
+        total_tokens = sum(t.total_tokens for t in successes)
+        return {
+            "tokens_per_success": total_tokens / len(successes),
+            "n_successes": len(successes),
+            "total_tokens": total_tokens,
+        }
+
+    def compare(self, baseline: dict, current: dict) -> Observation:
+        warnings: list[str] = []
+        b_tps, c_tps = baseline["tokens_per_success"], current["tokens_per_success"]
+        if b_tps is None or c_tps is None:
+            side = "both" if b_tps is None and c_tps is None else (
+                "baseline" if b_tps is None else "current"
+            )
+            warnings.append(f"No successes in {side} — token efficiency unavailable")
+            return Observation(
+                name=self.name, description=self.description,
+                direction=Direction.NA,
+                baseline=baseline, current=current,
+                formatted=f"n/a — no successes in {side}",
+                warnings=warnings,
+            )
+
+        delta = _pct_delta(b_tps, c_tps)
+        sign = "+" if delta >= 0 else ""
+        formatted = (
+            f"{b_tps:,.0f} → {c_tps:,.0f} tokens/success  {sign}{delta:.1f}%"
+            f"  ({baseline['n_successes']}→{current['n_successes']} successes)"
+        )
+        direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
+        return Observation(
+            name=self.name, description=self.description,
+            direction=direction,
+            baseline=baseline, current=current,
+            delta=delta, formatted=formatted,
+            warnings=warnings,
+        )
+
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
+        if result.delta is None:
+            return {}
+        return {"token_efficiency_delta_pct": result.delta}
+
+
+class CostQualityMetric(ComparisonMetric):
+    name = "cost_quality"
+    description = "Cost per successful task (total cost / successes)"
+    noise_threshold = 5.0
+    higher_is_better = False
+
+    def summarize(self, col: TraceCollection) -> dict:
+        traces = col.all_traces()
+        total_cost = sum(t.total_cost for t in traces)
+        successes = [t for t in traces if t.outcome == "success"]
+        if not successes:
+            return {
+                "cost_per_success": None, "n_successes": 0,
+                "total_cost": total_cost, "n_total": len(traces),
+            }
+        return {
+            "cost_per_success": total_cost / len(successes),
+            "n_successes": len(successes),
+            "total_cost": total_cost,
+            "n_total": len(traces),
+        }
+
+    def compare(self, baseline: dict, current: dict) -> Observation:
+        warnings: list[str] = []
+        b_cps, c_cps = baseline["cost_per_success"], current["cost_per_success"]
+        if b_cps is None or c_cps is None:
+            side = "both" if b_cps is None and c_cps is None else (
+                "baseline" if b_cps is None else "current"
+            )
+            warnings.append(f"No successes in {side} — cost/quality unavailable")
+            return Observation(
+                name=self.name, description=self.description,
+                direction=Direction.NA,
+                baseline=baseline, current=current,
+                formatted=f"n/a — no successes in {side}",
+                warnings=warnings,
+            )
+
+        delta = _pct_delta(b_cps, c_cps)
+        sign = "+" if delta >= 0 else ""
+        formatted = (
+            f"${b_cps:.4f} → ${c_cps:.4f} per success  {sign}{delta:.1f}%"
+            f"  ({baseline['n_successes']}/{baseline['n_total']} → "
+            f"{current['n_successes']}/{current['n_total']} succeeded)"
+        )
+        direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
+        return Observation(
+            name=self.name, description=self.description,
+            direction=direction,
+            baseline=baseline, current=current,
+            delta=delta, formatted=formatted,
+            warnings=warnings,
+        )
+
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
+        if result.delta is None:
+            return {}
+        return {
+            "cost_quality_delta_pct": result.delta,
+            "cost_per_success": result.current["cost_per_success"] or 0.0,
+        }
+
+
 # ── Default metric set ─────────────────────────────────────────────────────────
 
 DEFAULT_METRICS: list[ComparisonMetric] = [
@@ -474,6 +748,9 @@ DEFAULT_METRICS: list[ComparisonMetric] = [
     DurationMetric(),
     ToolErrorRateMetric(),
     PathDistributionMetric(),
+    TokenUsageMetric(),
+    TokenEfficiencyMetric(),
+    CostQualityMetric(),
 ]
 
 
@@ -488,6 +765,50 @@ def _percentile(sorted_values: list[float], pct: int) -> float:
         return 0.0
     idx = min(int(len(sorted_values) * pct / 100), len(sorted_values) - 1)
     return sorted_values[idx]
+
+
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    s = sorted(values)
+    n = len(s)
+    if n % 2 == 1:
+        return s[n // 2]
+    return (s[n // 2 - 1] + s[n // 2]) / 2
+
+
+def _iqr(values: list[float]) -> tuple[float, float, float]:
+    """Return (p25, median, p75)."""
+    if not values:
+        return (0.0, 0.0, 0.0)
+    s = sorted(values)
+    return (_percentile(s, 25), _median(values), _percentile(s, 75))
+
+
+def _bootstrap_ci(
+    values: list[float],
+    stat_fn=None,
+    n_resamples: int = 1000,
+    alpha: float = 0.05,
+) -> tuple[float, float]:
+    """Percentile bootstrap confidence interval.
+
+    Returns (lo, hi) bounds for the statistic at ``1 - alpha`` confidence.
+    Deterministic (seeded) for reproducibility.
+    """
+    if stat_fn is None:
+        stat_fn = _mean
+    if len(values) < 2:
+        v = stat_fn(values)
+        return (v, v)
+    rng = random.Random(42)
+    stats = sorted(
+        stat_fn(rng.choices(values, k=len(values)))
+        for _ in range(n_resamples)
+    )
+    lo = max(0, int(n_resamples * alpha / 2))
+    hi = min(len(stats) - 1, int(n_resamples * (1 - alpha / 2)))
+    return (round(stats[lo], 6), round(stats[hi], 6))
 
 
 def _pct_delta(base: float, curr: float) -> float:

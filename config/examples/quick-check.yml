@@ -1,0 +1,16 @@
+# Quick check — fast, lightweight comparison for local development.
+#
+# Usage:
+#   agentflow compare --baseline @baseline --current @current \
+#     --config config/examples/quick-check.yml
+#
+# Runs only the cheapest metrics (no path analysis, no per-task matching).
+# Good for rapid iteration when you're tweaking prompts locally.
+
+metrics:
+  - success_rate
+  - cost
+  - duration
+  - token_usage
+
+require: []

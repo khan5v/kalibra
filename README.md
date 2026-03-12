@@ -5,238 +5,216 @@ Regression detection and CI quality gates for AI agents.
 ```
 AgentFlow Compare
 ──────────────────────────────────────────────────────────
-Baseline    1,240 traces   (cached_sources/baseline.jsonl)
-Current     1,187 traces   (cached_sources/current.jsonl)
+Baseline     1,240 traces   (cached_sources/baseline.jsonl)
+Current      1,187 traces   (cached_sources/current.jsonl)
+Direction    ▲ IMPROVED
 
-Success rate      42.3% → 46.1%   +3.8 pp   ✓ significant (p=0.003)
-Avg steps         24.1 → 21.8     -9.5%
-Avg cost          $0.0120 → $0.0090  -25.0%
-Duration          avg 38.4s → 31.2s  -18.8%  |  P95 91.2s → 74.1s  -18.7%
-Per-task          1,103 matched — ✓ 31 improved, ✗ 8 regressed
+▲ Success rate    42.3% → 46.1%  +3.8 pp  ✓ significant (p=0.003)
+
+▲ Cost            $0.0100 → $0.0075 median  -25.0%
+                  $0.0120 → $0.0090 avg  -25.0%
+                  $14.88 → $10.69 total
+                  95% CI [-28.1%, -21.3%]
+
+▲ Steps           7 → 5 steps/trace (median)  -28.6%
+                  7.4 → 5.2 avg  -29.7%
+
+▲ Duration        34.1s → 28.5s median  -16.4%
+                  38.4s → 31.2s avg  -18.8%
+                  91.2s → 74.1s P95  -18.8%
+
+▲ Token usage     1,100 → 950 tokens/trace (median)  -13.6%
+                  1,240 → 1,080 avg  -12.9%
+                  in: 890 → 720 avg  |  out: 350 → 360 avg
+
+▲ Token eff.      8,300 → 6,200 tokens/success  -25.3%  (580→620 successes)
+▲ Cost / quality  $0.048 → $0.032 per success  -33.3%  (580/1240 → 620/1187 succeeded)
+≈ Per-task        1,103 matched — ✓ 31 improved, ✗ 8 regressed
+                  regressed: django__django-15498, flask__flask-5012 (+6 more)
+
+Thresholds
+  [  OK] success_rate_delta >= -2     actual: 3.80
+  [  OK] regressions <= 10            actual: 8.00
+  [  OK] total_cost <= 50             actual: 10.69
+
 ──────────────────────────────────────────────────────────
-All checks passed
+PASSED — all quality gates met
 ```
 
-## The problem it solves
+## What it does
 
-When you change a prompt, swap a model, or refactor a tool, you need to know: did the agent get better or worse? The answer isn't obvious — success rate might improve while cost doubles, or aggregate numbers stay flat while specific tasks regress.
+You change a prompt, swap a model, or refactor a tool. Did the agent get better or worse? AgentFlow compares a **baseline** run against a **current** run and tells you:
 
-AgentFlow compares a **baseline** run against a **current** run and gives you a structured answer: success rate with statistical significance, exact tasks that regressed or improved, and efficiency metrics across steps, cost, and latency. In CI, it fails the build if any threshold is violated.
+- Success rate change with statistical significance (two-proportion z-test)
+- Per-task regressions and improvements
+- Cost, token, and latency deltas with bootstrap confidence intervals
+- Cost-effectiveness: cost per success, tokens per success
+- In CI, exit code 1 if any threshold is violated
 
 ## Install
 
 ```bash
-pip install git+https://github.com/vorekhov/agentflow.git
+pip install git+https://github.com/khan5v/agentflow.git
 ```
 
-Requires Python 3.10+.
-
----
-
-## Core concepts
-
-### Traces
-
-A **trace** is one agent run — it has an outcome (`success` or `failure`) and a sequence of **spans** (tool calls, LLM calls, sub-steps). AgentFlow reads traces from:
-
-- SWE-bench `.traj` files or parquet directories
-- JSONL files pulled from Langfuse or LangSmith via `agentflow pull`
-
-### Sources
-
-A **source** is a named pull configuration defined in `config/sources/`. It tells AgentFlow where to fetch traces and caches the result under `cached_sources/`. You reference sources by name with `@`.
-
-### Checks
-
-**Checks** are the metrics and threshold gates defined in `config/compare.yml`. Metrics compute numbers; thresholds decide whether the comparison passes or fails.
+Python 3.11+.
 
 ---
 
 ## Quick start
 
-**Step 1.** Define your sources in `config/sources/myproject.yml`:
-
-```yaml
-baseline:
-  source: langfuse
-  project: my-agent
-  since: 7d
-
-current:
-  source: langfuse
-  project: my-agent
-  since: 1d
-```
-
-**Step 2.** Compare:
-
 ```bash
+# Compare local files
+agentflow compare --baseline ./baseline.jsonl --current ./current.jsonl
+
+# Compare named sources (fetched from Langfuse/LangSmith, cached locally)
 agentflow compare --baseline @baseline --current @current
+
+# Add quality gates
+agentflow compare --baseline @baseline --current @current \
+  --require "success_rate_delta >= -2" \
+  --require "regressions <= 5" \
+  --require "total_cost <= 50"
+
+# Output formats
+agentflow compare ... --format markdown    # GitHub PR comment
+agentflow compare ... --format json        # machine-readable
 ```
 
-AgentFlow fetches both datasets (or reads from `cached_sources/` if already pulled), runs all metrics, and prints the report. Add `--refresh` to force a re-pull.
+---
+
+## Metrics
+
+All metrics run by default. Disable any by editing `config/compare.yml`.
+
+| Metric | What it measures | Key threshold fields |
+|---|---|---|
+| **success_rate** | Pass/fail rate delta + z-test significance | `success_rate_delta`, `success_rate` |
+| **per_task** | Individual tasks that regressed or improved | `regressions`, `improvements` |
+| **cost** | Cost per trace — median, avg, total, 95% CI | `cost_delta_pct`, `total_cost`, `avg_cost` |
+| **steps** | Steps per trace — median and avg, CI | `steps_delta_pct`, `avg_steps`, `median_steps` |
+| **duration** | Trace duration — median, avg, P95, CI | `duration_delta_pct`, `duration_median_delta_pct`, `duration_p95_delta_pct`, `total_duration` |
+| **token_usage** | Token consumption — median, avg, in/out breakdown, CI | `token_delta_pct`, `total_tokens`, `avg_tokens` |
+| **token_efficiency** | Tokens per successful task | `token_efficiency_delta_pct` |
+| **cost_quality** | Total cost / number of successes | `cost_quality_delta_pct`, `cost_per_success` |
+| **tool_error_rate** | Fraction of tool calls returning errors | `tool_error_rate_delta` |
+| **path_distribution** | Jaccard similarity of execution paths | `path_jaccard` |
+
+**Confidence intervals**: Cost, duration, steps, and token metrics include bootstrap 95% CIs on the median. Gate on the upper bound for conservative thresholds (e.g., `cost_delta_pct <= 10` gates on the median point estimate).
+
+**Absolute thresholds**: Gate on absolute values, not just deltas — `total_cost <= 50`, `avg_tokens <= 5000`, `total_duration <= 3600`.
 
 ---
 
 ## Pulling traces
 
-Pull traces from Langfuse or LangSmith and cache them locally.
-
 ```bash
-# Pull a named source (reads config/sources/, caches to cached_sources/)
-agentflow pull @baseline
-agentflow pull @baseline --refresh      # force re-pull, ignore cache
-
-# Pull with explicit flags (no config file needed)
+agentflow pull @baseline                    # pull from config/sources/
+agentflow pull @baseline --refresh          # force re-pull
 agentflow pull --source langfuse --project my-agent --since 7d
-agentflow pull --source langsmith --project my-agent --output run.jsonl
+
+# Filter by tags or session
+agentflow pull --source langfuse --since 7d --tags agentflow --tags baseline
+agentflow pull --source langfuse --since 7d --session experiment-42
 ```
 
-**Environment variables:**
+Tag and session filters can also be set in source configs:
 
-| Service | Variables |
+```yaml
+# config/sources/production.yml
+baseline:
+  source: langfuse
+  project: my-agent
+  since: 7d
+  tags: [agentflow, baseline]
+  session: experiment-42
+```
+
+All remote requests use exponential backoff (5 retries) on rate limits, server errors, and connection failures.
+
+| Service | Environment variables |
 |---|---|
 | Langfuse | `LANGFUSE_HOST`, `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` |
 | LangSmith | `LANGSMITH_API_KEY` |
-
-The pull command handles rate limiting automatically — it retries with exponential backoff on 429 responses.
-
----
-
-## Comparing runs
-
-### Basic comparison
-
-```bash
-# Named sources (auto-fetches and caches)
-agentflow compare --baseline @baseline --current @current
-
-# Local files or directories
-agentflow compare --baseline ./baseline/ --current ./current/
-
-# Mix — named source vs. a local file
-agentflow compare --baseline @baseline --current ./fresh-run.jsonl
-```
-
-### Output formats
-
-```bash
---format terminal    # default — readable table for the terminal
---format markdown    # for GitHub PR comments
---format json        # machine-readable, for downstream tools
---output report.md   # write to file instead of stdout
-```
-
-### Pointing to external config
-
-By default AgentFlow looks for `config/compare.yml` and `config/sources/` relative to the current directory. Override either with flags:
-
-```bash
-# Use a config file from a different location
-agentflow compare --baseline @baseline --current @current \
-  --config /shared/configs/my-agent.yml
-
-# Use a sources directory from a different location
-agentflow compare --baseline @baseline --current @current \
-  --sources /shared/configs/sources/
-
-# Both together
-agentflow compare --baseline @baseline --current @current \
-  --config /shared/configs/my-agent.yml \
-  --sources /shared/configs/sources/
-```
-
-`--config` must be a file. `--sources` must be a directory. Both error immediately if the path does not exist or is the wrong type.
-
-### Threshold gates
-
-Thresholds make `agentflow compare` exit with code 1 when a condition is violated. Use them in CI to enforce quality standards.
-
-```bash
-agentflow compare \
-  --baseline @baseline \
-  --current @current \
-  --require "success_rate_delta >= -2" \
-  --require "regressions <= 5"
-```
-
-Available threshold fields:
-
-| Field | Description |
-|---|---|
-| `success_rate_delta` | Change in success rate (percentage points) |
-| `success_rate` | Absolute success rate of the current run (%) |
-| `regressions` | Tasks that went success → failure |
-| `improvements` | Tasks that went failure → success |
-| `cost_delta_pct` | % change in average cost per trace |
-| `steps_delta_pct` | % change in average steps per trace |
-| `duration_delta_pct` | % change in average duration |
-| `duration_p95_delta_pct` | % change in P95 latency |
-| `tool_error_rate_delta` | Change in tool error rate (percentage points) |
-| `path_jaccard` | Path similarity — 1.0 is identical, 0 is completely different |
 
 ---
 
 ## Configuration
 
-### `config/compare.yml` — metrics and gates (`--config` to override)
+### `config/compare.yml`
 
-Controls which metrics run and what thresholds are enforced.
+By default, all built-in metrics run with no quality gates. Customize by listing specific metrics and adding `require` expressions.
 
-```yaml
-# config/compare.yml
+### Example configurations
 
-metrics:
-  - success_rate      # success rate delta + two-proportion z-test
-  - per_task          # per-task regression / improvement detection
-  - cost              # average cost per trace
-  - steps             # average steps (spans) per trace
-  - duration          # average and P95 latency
-  - tool_error_rate   # fraction of tool calls that returned an error
-  - path_distribution # Jaccard similarity of top execution paths
+Ready-to-use configs in `config/examples/`. Use with `--config`:
 
-require:
-  - success_rate_delta >= -2    # at most 2 pp drop
-  - regressions <= 5            # at most 5 task regressions
-  - cost_delta_pct <= 20        # at most 20% cost increase
+| Config | Use case | What it does |
+|---|---|---|
+| **`ci-gate.yml`** | CI/CD pipelines | Gates on success rate, regressions, cost, latency, tokens. Exits 1 on violation. |
+| **`model-comparison.yml`** | Evaluating a model swap | Cost-effectiveness focus: cost/quality, token efficiency, no hard gates. |
+| **`cost-control.yml`** | Budget enforcement | Absolute limits: total run cost, per-trace cost, cost per success, token cap. |
+| **`swebench.yml`** | SWE-bench benchmarks | Tight regression detection: per-task failures, token efficiency per solve. |
+| **`quick-check.yml`** | Local development | Minimal metrics, no gates. Fast iteration on prompt changes. |
+
+```bash
+# Use an example config
+agentflow compare --baseline @baseline --current @current \
+  --config config/examples/ci-gate.yml
+
+# Or write your own
+agentflow compare --baseline @baseline --current @current \
+  --config config/compare.yml
 ```
 
-Omit `metrics` entirely to run all built-in metrics. Omit `require` for no gates.
+Example — `config/examples/ci-gate.yml`:
 
-### `config/sources/` — named pull registry (`--sources` to override)
+```yaml
+metrics:
+  - success_rate
+  - per_task
+  - cost
+  - duration
+  - token_usage
 
-Each `.yml` file in this directory defines named sources. All files are merged automatically — you can split them by project, environment, or team.
+require:
+  - success_rate_delta >= -2
+  - regressions <= 5
+  - cost_delta_pct <= 20
+  - duration_p95_delta_pct <= 30
+  - token_delta_pct <= 25
+```
+
+Omit `metrics` to run all built-ins. Omit `require` for no gates.
+
+### `config/sources/*.yml`
 
 ```yaml
 # config/sources/production.yml
-
 prod-baseline:
   source: langfuse
-  project: my-agent-prod
+  project: my-agent
   since: 7d
-  limit: 5000
+  tags: [production, v1]
 
 prod-current:
   source: langfuse
-  project: my-agent-prod
-  since: 1d
+  project: my-agent
+  since: 7d
+  tags: [production, v2]
 ```
 
-```bash
-agentflow compare --baseline @prod-baseline --current @prod-current
-```
+Override locations: `--config /path/to/compare.yml`, `--sources /path/to/sources/`.
 
 ---
 
 ## Custom metrics
 
-### Drop-in plugin (zero config)
-
-Create `agentflow_metrics.py` in your project root — it is auto-discovered and loaded automatically, no config entry needed.
+Drop `agentflow_metrics.py` in your project root — auto-discovered, no config needed:
 
 ```python
 # agentflow_metrics.py
-from agentflow import ComparisonMetric, MetricResult, TraceCollection
+from agentflow import ComparisonMetric, Observation, TraceCollection
 
 class SubmitRateMetric(ComparisonMetric):
     name = "submit_rate"
@@ -244,93 +222,64 @@ class SubmitRateMetric(ComparisonMetric):
 
     def summarize(self, col: TraceCollection) -> float:
         traces = col.all_traces()
-        if not traces:
-            return 0.0
-        return sum(1 for t in traces if any(s.name == "submit" for s in t.spans)) / len(traces)
+        return sum(1 for t in traces if any(s.name == "submit" for s in t.spans)) / len(traces) if traces else 0.0
 
-    def compare(self, baseline: float, current: float) -> MetricResult:
+    def compare(self, baseline: float, current: float) -> Observation:
         delta = round((current - baseline) * 100, 2)
-        return MetricResult(
-            name=self.name,
-            description=self.description,
-            baseline=baseline,
-            current=current,
-            delta=delta,
+        return Observation(
+            name=self.name, description=self.description,
+            baseline=baseline, current=current, delta=delta,
             formatted=f"{baseline:.1%} → {current:.1%}  {delta:+.1f} pp",
         )
 
-    def threshold_fields(self, result: MetricResult) -> dict[str, float]:
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {"submit_rate_delta": result.delta}
 
 METRICS = [SubmitRateMetric()]
 ```
 
-### Module path (for packages)
-
-Add a dotted module path to the `metrics` list in `config/compare.yml`:
-
-```yaml
-metrics:
-  - success_rate
-  - mypackage.eval.custom_metrics   # imported, its METRICS list is run
-```
-
-### Node-level metrics
-
-Register per-span diagnostic metrics (shown in the per-node breakdown):
-
-```python
-from agentflow.plugins import register
-from agentflow.converters.base import Trace
-
-@register("p95_duration", "95th-percentile span duration in seconds")
-def p95_duration(node: str, traces: list[Trace]) -> float:
-    durations = sorted(
-        s.end_time - s.start_time
-        for t in traces for s in t.spans if s.name == node
-    )
-    if not durations:
-        return 0.0
-    idx = min(int(len(durations) * 0.95), len(durations) - 1)
-    return round(durations[idx], 3)
-```
-
-Built-in node metrics: `retry_rate`, `error_rate`, `cost_share`, `token_intensity`.
+Or add a dotted module path in `config/compare.yml`: `- mypackage.custom_metrics`.
 
 ---
 
 ## Programmatic API
 
-Use `compare_collections` when you have traces in memory and don't need to write files to disk.
-
 ```python
 import agentflow
-from agentflow import CompareConfig, TraceCollection
 
-baseline = TraceCollection.from_traces(run_agent(test_suite, model="gpt-4"))
-current  = TraceCollection.from_traces(run_agent(test_suite, model="gpt-4o"))
+baseline = agentflow.TraceCollection.from_traces(run_agent(suite, model="gpt-4"))
+current  = agentflow.TraceCollection.from_traces(run_agent(suite, model="gpt-4o"))
 
 result = agentflow.compare_collections(
-    baseline,
-    current,
-    config=CompareConfig(
-        metrics=["success_rate", "cost", "per_task"],
-        require=["success_rate_delta >= -2", "regressions <= 5"],
+    baseline, current,
+    config=agentflow.CompareConfig(
+        metrics=["success_rate", "cost", "token_efficiency"],
+        require=["success_rate_delta >= -2", "cost_per_success <= 0.05"],
     ),
 )
 
-for name, metric in result.metrics.items():
-    print(f"{name}: {metric.formatted}")
-
+for name, obs in result.metrics.items():
+    print(f"{name}: {obs.formatted}")
 print("passed:", result.thresholds_passed)
 ```
+
+---
+
+## Trace formats
+
+AgentFlow reads:
+- **JSONL** — portable format, produced by `agentflow pull`
+- **SWE-bench** `.traj` files and parquet directories
+- **Langfuse** / **LangSmith** — via connectors with `agentflow pull`
+
+Internally, all traces are OTel `ReadableSpan` trees using [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
 
 ---
 
 ## Development
 
 ```bash
-git clone https://github.com/vorekhov/agentflow.git
+git clone https://github.com/khan5v/agentflow.git
 cd agentflow
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"

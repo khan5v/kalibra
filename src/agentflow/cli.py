@@ -106,12 +106,17 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
 @click.option("--limit", default=5000, type=int, help="Max traces to fetch (default: 5000).")
 @click.option("--output", "-o", default=None,
               help="Output JSONL file path (default: @name → .agentflow/<name>.jsonl, else traces.jsonl).")
+@click.option("--tags", multiple=True,
+              help="Filter traces by tag (Langfuse). Repeatable.")
+@click.option("--session", default=None,
+              help="Filter traces by session ID (Langfuse).")
 @click.option("--sources-dir", default=None, type=click.Path(),
               help="Directory of source configs (default: config/sources/).")
 @click.option("--refresh", is_flag=True, default=False,
               help="Re-pull even if a local cache already exists (only relevant for @name).")
 def pull(name: str | None, source: str | None, project: str | None,
-         since: str, limit: int, output: str | None, sources_dir: str | None, refresh: bool):
+         since: str, limit: int, output: str | None, tags: tuple,
+         session: str | None, sources_dir: str | None, refresh: bool):
     """Pull traces from Langfuse or LangSmith and save as JSONL.
 
     \b
@@ -153,7 +158,11 @@ def pull(name: str | None, source: str | None, project: str | None,
             _print_pull_summary(dest)
             return
 
-        _do_pull(src.source, src.project, src.since, src.limit, dest)
+        # CLI flags override source config
+        effective_tags = list(tags) or src.tags
+        effective_session = session or src.session
+        _do_pull(src.source, src.project, src.since, src.limit, dest,
+                 tags=effective_tags, session_id=effective_session)
     else:
         if not source or not project:
             raise click.UsageError(
@@ -161,7 +170,8 @@ def pull(name: str | None, source: str | None, project: str | None,
                 "or both --source and --project."
             )
         dest = output or "traces.jsonl"
-        _do_pull(source, project, since, limit, dest)
+        _do_pull(source, project, since, limit, dest,
+                 tags=list(tags), session_id=session)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -191,19 +201,34 @@ def _resolve_source(arg: str, sources: dict, refresh: bool) -> str:
         click.echo(f"  @{name}: using cache ({dest})")
         return str(dest)
 
-    _do_pull(src.source, src.project, src.since, src.limit, str(dest))
+    _do_pull(src.source, src.project, src.since, src.limit, str(dest),
+             tags=src.tags, session_id=src.session)
     return str(dest)
 
 
-def _do_pull(source: str, project: str, since: str, limit: int, output: str) -> None:
+def _do_pull(source: str, project: str, since: str, limit: int, output: str,
+             tags: list[str] | None = None, session_id: str | None = None) -> None:
     from agentflow.connectors import get_connector
     from agentflow.connectors.langfuse import parse_since
     from agentflow.converters.generic import save_jsonl
 
-    click.echo(f"Connecting to {source} (project: {project}, since: {since})...")
-    traces = get_connector(source).fetch(
-        project_id=project, since=parse_since(since), limit=limit, progress=True
+    extra = ""
+    if tags:
+        extra += f", tags: {tags}"
+    if session_id:
+        extra += f", session: {session_id}"
+    click.echo(f"Connecting to {source} (project: {project}, since: {since}{extra})...")
+    connector = get_connector(source)
+    fetch_kwargs: dict = dict(
+        project_id=project, since=parse_since(since), limit=limit, progress=True,
     )
+    # Langfuse supports tag/session filtering; other connectors ignore these.
+    if source == "langfuse":
+        if tags:
+            fetch_kwargs["tags"] = tags
+        if session_id:
+            fetch_kwargs["session_id"] = session_id
+    traces = connector.fetch(**fetch_kwargs)
     click.echo(f"Fetched {len(traces):,} traces.")
     save_jsonl(traces, output)
     click.echo(f"Saved to {output}")
