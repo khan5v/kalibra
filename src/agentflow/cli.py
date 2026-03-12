@@ -7,6 +7,8 @@ from pathlib import Path
 
 import click
 
+DEFAULT_CACHE_DIR = "cached_sources"
+
 
 @click.group()
 @click.version_option()
@@ -34,8 +36,11 @@ def main():
               help="Write output to file instead of stdout.")
 @click.option("--refresh", is_flag=True, default=False,
               help="Re-pull @name sources even if a local cache exists.")
+@click.option("--cache-dir", default=DEFAULT_CACHE_DIR, type=click.Path(),
+              help="Directory for cached pulled traces.", show_default=True)
 def compare(baseline: str, current: str, out_format: str, require: tuple,
-            config_path: str | None, sources_dir: str | None, output: str | None, refresh: bool):
+            config_path: str | None, sources_dir: str | None, output: str | None,
+            refresh: bool, cache_dir: str):
     """Compare two trace datasets — regression detection, statistical diff.
 
     \b
@@ -76,8 +81,8 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
 
     config = CompareConfig.load(config_path)
     sources = load_sources(sources_dir)
-    baseline_path = _resolve_source(baseline, sources, refresh)
-    current_path = _resolve_source(current, sources, refresh)
+    baseline_path = _resolve_source(baseline, sources, refresh, cache_dir=cache_dir)
+    current_path = _resolve_source(current, sources, refresh, cache_dir=cache_dir)
 
     result = _compare(baseline_path, current_path, require=list(require) or None, config=config)
     text = render(result, out_format)
@@ -114,9 +119,12 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
               help="Directory of source configs (default: config/sources/).")
 @click.option("--refresh", is_flag=True, default=False,
               help="Re-pull even if a local cache already exists (only relevant for @name).")
+@click.option("--cache-dir", default=DEFAULT_CACHE_DIR, type=click.Path(),
+              help="Directory for cached pulled traces.", show_default=True)
 def pull(name: str | None, source: str | None, project: str | None,
          since: str, limit: int, output: str | None, tags: tuple,
-         session: str | None, sources_dir: str | None, refresh: bool):
+         session: str | None, sources_dir: str | None, refresh: bool,
+         cache_dir: str):
     """Pull traces from Langfuse or LangSmith and save as JSONL.
 
     \b
@@ -145,11 +153,17 @@ def pull(name: str | None, source: str | None, project: str | None,
         src_name = name[1:]
         if src_name not in sources:
             available = list(sources)
-            raise click.UsageError(
-                f"Source '@{src_name}' not in sources.yml. Available: {available or ['(none defined)']}"
+            hint = (
+                f"Source '@{src_name}' not found in sources config.\n"
+                f"  Available sources: {available or '(none defined)'}\n\n"
+                f"  To use a named source, define it in a YAML file under config/sources/\n"
+                f"  or pass --sources-dir to point at your sources directory.\n\n"
+                f"  Alternatively, pull with explicit flags:\n"
+                f"    agentflow pull --source langfuse --project my-agent --since 7d"
             )
+            raise click.UsageError(hint)
         src = sources[src_name]
-        dest = output or str(_cache_path(src_name))
+        dest = output or str(_cache_path(src_name, cache_dir=cache_dir))
 
         # Check cache
         cache = Path(dest)
@@ -166,8 +180,10 @@ def pull(name: str | None, source: str | None, project: str | None,
     else:
         if not source or not project:
             raise click.UsageError(
-                "Provide either @NAME (from sources.yml) "
-                "or both --source and --project."
+                "Provide either @NAME (from a sources config) "
+                "or both --source and --project.\n\n"
+                "  Named source:    agentflow pull @my-baseline\n"
+                "  Explicit flags:  agentflow pull --source langfuse --project my-agent --since 7d"
             )
         dest = output or "traces.jsonl"
         _do_pull(source, project, since, limit, dest,
@@ -176,13 +192,15 @@ def pull(name: str | None, source: str | None, project: str | None,
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
-def _cache_path(name: str) -> Path:
-    cache_dir = Path("cached_sources")
-    cache_dir.mkdir(exist_ok=True)
-    return cache_dir / f"{name}.jsonl"
+
+def _cache_path(name: str, cache_dir: str = DEFAULT_CACHE_DIR) -> Path:
+    d = Path(cache_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{name}.jsonl"
 
 
-def _resolve_source(arg: str, sources: dict, refresh: bool) -> str:
+def _resolve_source(arg: str, sources: dict, refresh: bool,
+                     cache_dir: str = DEFAULT_CACHE_DIR) -> str:
     """If arg starts with @, pull the named source (using cache when available)."""
     if not arg.startswith("@"):
         return arg
@@ -190,12 +208,18 @@ def _resolve_source(arg: str, sources: dict, refresh: bool) -> str:
     name = arg[1:]
     if name not in sources:
         available = list(sources)
-        raise click.UsageError(
-            f"Source '@{name}' not in sources.yml. Available: {available or ['(none defined)']}"
+        hint = (
+            f"Source '@{name}' not found in sources config.\n"
+            f"  Available sources: {available or '(none defined)'}\n\n"
+            f"  To use a named source, define it in a YAML file under config/sources/\n"
+            f"  or pass --sources to point at your sources directory.\n\n"
+            f"  Alternatively, pass a file or directory path directly:\n"
+            f"    agentflow compare --baseline ./traces.jsonl --current ./traces2.jsonl"
         )
+        raise click.UsageError(hint)
 
     src = sources[name]
-    dest = _cache_path(name)
+    dest = _cache_path(name, cache_dir=cache_dir)
 
     if not refresh and dest.exists():
         click.echo(f"  @{name}: using cache ({dest})")

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import click
+
 from agentflow.compare import CompareResult
 from agentflow.metrics import Direction
 
@@ -23,6 +25,26 @@ _DIRECTION_LABEL = {
     Direction.INCONCLUSIVE: "MIXED",
     Direction.NA:           "N/A",
 }
+
+_DIRECTION_COLOR = {
+    Direction.UPGRADE:      "green",
+    Direction.SAME:         "cyan",
+    Direction.DEGRADATION:  "red",
+    Direction.INCONCLUSIVE: "yellow",
+    Direction.NA:           "white",
+}
+
+
+def _styled_badge(direction: Direction) -> str:
+    """Return a colored direction badge for terminal output."""
+    color = _DIRECTION_COLOR[direction]
+    return click.style(_DIRECTION_BADGE[direction], fg=color, bold=True)
+
+
+def _styled_label(direction: Direction) -> str:
+    """Return a colored direction label for terminal output."""
+    color = _DIRECTION_COLOR[direction]
+    return click.style(_DIRECTION_LABEL[direction], fg=color, bold=True)
 
 _LABELS = {
     "success_rate":       "Success rate",
@@ -55,75 +77,78 @@ def render(result: CompareResult, fmt: str) -> str:
 # ── Terminal ───────────────────────────────────────────────────────────────────
 
 def _terminal(r: CompareResult) -> str:
-    bar = "─" * 58
+    bar = click.style("─" * 58, dim=True)
 
     direction = r.comparison.direction
-    badge = _DIRECTION_BADGE[direction]
-    dir_label = _DIRECTION_LABEL[direction]
+    badge = _styled_badge(direction)
+    dir_label = _styled_label(direction)
 
     lines = [
         "",
-        f"{_INDENT}AgentFlow Compare",
+        f"{_INDENT}{click.style('AgentFlow Compare', bold=True)}",
         f"{_INDENT}{bar}",
-        f"{_INDENT}Baseline  {r.baseline_count:>8,} traces   ({r.baseline_source})",
-        f"{_INDENT}Current   {r.current_count:>8,} traces   ({r.current_source})",
-        f"{_INDENT}Direction {badge} {dir_label}",
+        f"{_INDENT}{click.style('Baseline', dim=True)}  {r.baseline_count:>8,} traces   {click.style(f'({r.baseline_source})', dim=True)}",
+        f"{_INDENT}{click.style('Current', dim=True)}   {r.current_count:>8,} traces   {click.style(f'({r.current_source})', dim=True)}",
+        f"{_INDENT}{click.style('Direction', dim=True)} {badge} {dir_label}",
         "",
     ]
 
     if r.warnings:
         for w in r.warnings:
-            lines.append(f"{_INDENT}!  {w}")
+            lines.append(f"{_INDENT}{click.style('!', fg='yellow', bold=True)}  {click.style(w, fg='yellow')}")
         lines.append("")
 
     for obs in r.comparison.observations.values():
-        badge_m = _DIRECTION_BADGE[obs.direction]
+        badge_m = _styled_badge(obs.direction)
         label_m = _LABELS.get(obs.name, obs.name)
 
         if obs.name == "per_task":
             meta = obs.metadata
             if meta["matched"] == 0 and not obs.warnings:
                 continue
-            lines.append(f"{_INDENT}{badge_m} {label_m:<16}{obs.formatted}")
+            lines.append(f"{_INDENT}{badge_m} {click.style(f'{label_m:<16}', bold=True)}{obs.formatted}")
             n_imp = meta["n_improvements"]
             n_reg = meta["n_regressions"]
-            # Show up to 3 task IDs as examples, never flood the terminal
             if n_reg > 0:
                 sample = ", ".join(meta["regressions"][:3])
                 suffix = f" (+{n_reg - 3} more)" if n_reg > 3 else ""
-                lines.append(f"{_DETAIL_INDENT}regressed: {sample}{suffix}")
+                lines.append(f"{_DETAIL_INDENT}{click.style('regressed:', fg='red')} {sample}{suffix}")
             if n_imp > 0:
                 sample = ", ".join(meta["improvements"][:3])
                 suffix = f" (+{n_imp - 3} more)" if n_imp > 3 else ""
-                lines.append(f"{_DETAIL_INDENT}improved:  {sample}{suffix}")
+                lines.append(f"{_DETAIL_INDENT}{click.style('improved:', fg='green')}  {sample}{suffix}")
         else:
-            lines.append(f"{_INDENT}{badge_m} {label_m:<16}{obs.formatted}")
+            lines.append(f"{_INDENT}{badge_m} {click.style(f'{label_m:<16}', bold=True)}{obs.formatted}")
             for detail in obs.detail_lines:
-                lines.append(f"{_DETAIL_INDENT}{detail}")
+                lines.append(f"{_DETAIL_INDENT}{click.style(detail, dim=True)}")
 
         for w in obs.warnings:
-            lines.append(f"{_DETAIL_INDENT}!  {w}")
+            lines.append(f"{_DETAIL_INDENT}{click.style('!', fg='yellow', bold=True)}  {click.style(w, fg='yellow')}")
         lines.append("")
 
     if r.validation.gates:
-        lines.append(f"{_INDENT}Thresholds")
-        # Align expressions to the widest one
+        lines.append(f"{_INDENT}{click.style('Thresholds', bold=True)}")
         max_expr = max(len(g.expr) for g in r.validation.gates)
         for g in r.validation.gates:
-            icon = "SKIP" if g.warning else ("OK" if g.passed else "FAIL")
-            actual = f"{g.actual:.2f}" if g.actual == g.actual else "n/a"  # nan-safe
-            line = f"{_INDENT}  [{icon:>4}] {g.expr:<{max_expr}}   actual: {actual}"
             if g.warning:
-                line += f"  ({g.warning})"
+                icon = click.style("SKIP", fg="yellow")
+            elif g.passed:
+                icon = click.style(" OK ", fg="green", bold=True)
+            else:
+                icon = click.style("FAIL", fg="red", bold=True)
+            actual = f"{g.actual:.2f}" if g.actual == g.actual else "n/a"  # nan-safe
+            line = f"{_INDENT}  [{icon}] {g.expr:<{max_expr}}   actual: {actual}"
+            if g.warning:
+                line += f"  {click.style(f'({g.warning})', fg='yellow')}"
             lines.append(line)
         lines.append("")
 
     lines.append(f"{_INDENT}{bar}")
     if r.validation.gates:
         if r.validation.passed:
-            lines.append(f"{_INDENT}PASSED — all quality gates met")
+            lines.append(f"{_INDENT}{click.style('PASSED', fg='green', bold=True)} — all quality gates met")
         else:
-            lines.append(f"{_INDENT}FAILED — quality gate violation (exit code 1)")
+            lines.append(f"{_INDENT}{click.style('FAILED', fg='red', bold=True)} — quality gate violation (exit code 1)")
     else:
         lines.append(f"{_INDENT}{badge} {dir_label} — no quality gates configured")
     lines.append("")

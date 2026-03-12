@@ -20,17 +20,65 @@ def load_json_traces(path: Path) -> list[Trace]:
     """Load traces from a JSONL file (supports both current and legacy formats)."""
     traces = []
     with open(path) as f:
-        for line in f:
+        for line_no, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
-            d = json.loads(line)
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"{path}:{line_no}: invalid JSON — {exc}\n"
+                    f"  Each line must be a valid JSON object. "
+                    f"See docs/jsonl-schema.md for the expected format."
+                ) from exc
+
+            if not isinstance(d, dict):
+                raise ValueError(
+                    f"{path}:{line_no}: expected a JSON object, got {type(d).__name__}\n"
+                    f"  Each line must be a JSON object with at least: "
+                    f"trace_id, outcome, spans"
+                )
+
+            if "trace_id" not in d:
+                raise ValueError(
+                    f"{path}:{line_no}: missing required field 'trace_id'\n"
+                    f"  Each trace must have a 'trace_id' string. "
+                    f"See docs/jsonl-schema.md for the expected format."
+                )
+
             trace_id = d["trace_id"]
-            spans = [_load_span(s, trace_id) for s in d.get("spans", [])]
+            raw_spans = d.get("spans", [])
+            if not isinstance(raw_spans, list):
+                raise ValueError(
+                    f"{path}:{line_no}: 'spans' must be a list, got {type(raw_spans).__name__}\n"
+                    f"  trace_id: {trace_id}"
+                )
+
+            spans = []
+            for i, s in enumerate(raw_spans):
+                try:
+                    spans.append(_load_span(s, trace_id))
+                except (KeyError, TypeError) as exc:
+                    raise ValueError(
+                        f"{path}:{line_no}: invalid span at index {i} — {exc}\n"
+                        f"  trace_id: {trace_id}\n"
+                        f"  Required span fields: name, span_id, start_ns, end_ns\n"
+                        f"  See docs/jsonl-schema.md for the expected format."
+                    ) from exc
+
+            outcome = d.get("outcome")
+            if outcome is not None and outcome not in ("success", "failure"):
+                raise ValueError(
+                    f"{path}:{line_no}: 'outcome' must be \"success\", \"failure\", or null — "
+                    f"got {outcome!r}\n"
+                    f"  trace_id: {trace_id}"
+                )
+
             traces.append(Trace(
                 trace_id=trace_id,
                 spans=spans,
-                outcome=d.get("outcome"),
+                outcome=outcome,
                 metadata=d.get("metadata", {}),
             ))
     return traces

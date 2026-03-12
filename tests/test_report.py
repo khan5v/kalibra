@@ -1,5 +1,7 @@
 """Tests for report rendering — terminal, markdown, JSON formats."""
 
+import click
+
 from agentflow.collection import TraceCollection
 from agentflow.compare import compare_collections
 from agentflow.config import CompareConfig
@@ -63,13 +65,15 @@ class TestTerminalReport:
 
     def test_gates_passed(self):
         text = render(_make_result(require=["success_rate_delta >= -50"]), "terminal")
-        assert "PASSED" in text
-        assert "[  OK]" in text
+        plain = click.unstyle(text)
+        assert "PASSED" in plain
+        assert "[ OK ]" in plain
 
     def test_gates_failed(self):
         text = render(_make_result(require=["success_rate_delta >= 99"]), "terminal")
-        assert "FAILED" in text
-        assert "[FAIL]" in text
+        plain = click.unstyle(text)
+        assert "FAILED" in plain
+        assert "[FAIL]" in plain
 
     def test_per_task_capped(self):
         """Per-task output should cap task IDs, not flood the terminal."""
