@@ -110,9 +110,12 @@ def _terminal(r: CompareResult) -> str:
         # Align expressions to the widest one
         max_expr = max(len(g.expr) for g in r.validation.gates)
         for g in r.validation.gates:
-            icon = "OK" if g.passed else "FAIL"
+            icon = "SKIP" if g.warning else ("OK" if g.passed else "FAIL")
             actual = f"{g.actual:.2f}" if g.actual == g.actual else "n/a"  # nan-safe
-            lines.append(f"{_INDENT}  [{icon:>4}] {g.expr:<{max_expr}}   actual: {actual}")
+            line = f"{_INDENT}  [{icon:>4}] {g.expr:<{max_expr}}   actual: {actual}"
+            if g.warning:
+                line += f"  ({g.warning})"
+            lines.append(line)
         lines.append("")
 
     lines.append(f"{_INDENT}{bar}")

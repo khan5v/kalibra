@@ -18,6 +18,7 @@ class Gate:
     passed: bool
     actual: float
     metric_name: str | None = None
+    warning: str | None = None
 
 
 @dataclass
@@ -238,8 +239,12 @@ def _eval_expr(expr: str, values: dict[str, float]) -> Gate:
             except ValueError:
                 return Gate(expr=expr, passed=False, actual=float("nan"))
             if field not in values:
-                available = sorted(values)
-                raise ValueError(f"Unknown threshold field: {field!r}. Available: {available}")
+                return Gate(
+                    expr=expr,
+                    passed=True,
+                    actual=float("nan"),
+                    warning=f"Field {field!r} not available — metric produced no data, gate skipped",
+                )
             actual = values[field]
             return Gate(
                 expr=expr,

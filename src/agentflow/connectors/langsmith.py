@@ -195,9 +195,13 @@ class LangSmithConnector:
         t0 = _to_ts(run.start_time)
         t1 = _to_ts(run.end_time) if run.end_time else t0
 
+        # Try SDK fields first, then fall back to extra.metadata (agentflow custom fields)
         usage = getattr(run, "usage_metadata", None) or {}
         input_tokens = usage.get("input_tokens", 0) or 0
         output_tokens = usage.get("output_tokens", 0) or 0
+        if input_tokens == 0 and output_tokens == 0:
+            input_tokens = getattr(run, "prompt_tokens", 0) or 0
+            output_tokens = getattr(run, "completion_tokens", 0) or 0
 
         model = None
         extra = getattr(run, "extra", None) or {}
@@ -222,9 +226,15 @@ class LangSmithConnector:
             attrs[GEN_AI_MODEL] = model
         attrs[GEN_AI_INPUT_TOKENS]  = input_tokens
         attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
-        # LangSmith doesn't expose cost natively — read from extra.metadata.agentflow_cost
+        # LangSmith doesn't reliably persist cost/tokens — read from extra.metadata
         metadata = extra.get("metadata", {}) if isinstance(extra, dict) else {}
         attrs[AF_COST] = float(metadata.get("agentflow_cost", 0.0))
+        # Fall back to metadata tokens if SDK fields are empty
+        if input_tokens == 0 and output_tokens == 0:
+            input_tokens = int(metadata.get("agentflow_input_tokens", 0))
+            output_tokens = int(metadata.get("agentflow_output_tokens", 0))
+            attrs[GEN_AI_INPUT_TOKENS] = input_tokens
+            attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
 
         return make_span(
             name=name,

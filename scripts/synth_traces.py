@@ -584,7 +584,11 @@ def send_langsmith_trace(client, trace_data: dict, project: str, tags: list[str]
         child_id = uuid.uuid4()
         end_time = t + timedelta(seconds=step["duration"])
 
-        extra: dict = {"metadata": {"agentflow_cost": step["cost"]}}
+        extra: dict = {"metadata": {
+            "agentflow_cost": step["cost"],
+            "agentflow_input_tokens": step["input_tokens"],
+            "agentflow_output_tokens": step["output_tokens"],
+        }}
         if step["model"]:
             extra["invocation_params"] = {"model_name": step["model"]}
 
