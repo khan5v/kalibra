@@ -326,10 +326,15 @@ def generate_trace_data(
     task_id: str,
     trace_idx: int,
     rng: random.Random,
+    run_id: str = "",
 ) -> dict:
     """Generate trace data (target-agnostic). Returns a dict describing one trace."""
     model_tag = "sonnet" if mode == "current" else "baseline"
-    trace_name = f"{task_id}__{model_tag}__{trace_idx}"
+    # Include run_id to prevent trace ID collisions across separate generator runs.
+    # Without this, re-running the generator appends spans to existing Langfuse traces,
+    # producing bogus multi-day durations.
+    rid = f"_{run_id}" if run_id else ""
+    trace_name = f"{task_id}__{model_tag}__{trace_idx}{rid}"
 
     success = rng.random() < cfg["success_rate"]
     path_name = _weighted_choice(rng, cfg["path_weights"])
@@ -524,8 +529,10 @@ def send_langfuse(mode: str, cfg: dict, paths: dict, rng: random.Random,
 
     n = count or cfg["n_traces"]
     tags = tags or ["kalibra", mode]
+    run_id = uuid.uuid4().hex[:8]
     print(f"Sending {n} {mode} traces to Langfuse ({LANGFUSE_HOST})...")
     print(f"  Tags: {tags}")
+    print(f"  Run ID: {run_id}")
     print()
 
     pending: list[dict] = []
@@ -533,7 +540,7 @@ def send_langfuse(mode: str, cfg: dict, paths: dict, rng: random.Random,
 
     for i in range(n):
         task_id = TASK_POOL[i % len(TASK_POOL)]
-        trace_data = generate_trace_data(mode, cfg, paths, task_id, i, rng)
+        trace_data = generate_trace_data(mode, cfg, paths, task_id, i, rng, run_id=run_id)
         pending.extend(trace_to_langfuse_events(trace_data, tags=tags))
 
         if len(pending) >= LANGFUSE_BATCH_SIZE or i == n - 1:
@@ -648,14 +655,16 @@ def send_langsmith(mode: str, cfg: dict, paths: dict, rng: random.Random, projec
 
     n = count or cfg["n_traces"]
     tags = tags or ["kalibra", mode]
+    run_id = uuid.uuid4().hex[:8]
     print(f"Sending {n} {mode} traces to LangSmith ({LANGSMITH_API_URL})...")
     print(f"  Project: {project}")
     print(f"  Tags: {tags}")
+    print(f"  Run ID: {run_id}")
     print()
 
     for i in range(n):
         task_id = TASK_POOL[i % len(TASK_POOL)]
-        trace_data = generate_trace_data(mode, cfg, paths, task_id, i, rng)
+        trace_data = generate_trace_data(mode, cfg, paths, task_id, i, rng, run_id=run_id)
         send_langsmith_trace(client, trace_data, project, tags=tags)
         if (i + 1) % 5 == 0 or i == n - 1:
             print(f"  {i + 1}/{n} traces sent...")

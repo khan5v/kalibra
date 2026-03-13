@@ -26,11 +26,13 @@ from kalibra.metrics import (
     CostQualityMetric,
     Direction,
     DurationMetric,
+    HAS_SCIPY,
     StepsMetric,
     TokenEfficiencyMetric,
     TokenUsageMetric,
     _bootstrap_ci,
     _iqr,
+    _mannwhitney,
     _median,
 )
 
@@ -680,3 +682,144 @@ class TestEdgeCases:
             small_width = s_small["ci_95"][1] - s_small["ci_95"][0]
             large_width = s_large["ci_95"][1] - s_large["ci_95"][0]
             assert large_width <= small_width
+
+
+# ── Mann-Whitney U tests ─────────────────────────────────────────────────────
+
+import pytest
+
+
+class TestMannWhitneyHelper:
+    def test_returns_none_with_tiny_samples(self):
+        """Need at least 2 values per side."""
+        assert _mannwhitney([1.0], [2.0, 3.0], higher_is_better=True) is None
+        assert _mannwhitney([1.0, 2.0], [3.0], higher_is_better=True) is None
+
+    def test_identical_constants(self):
+        """All-same values on both sides → p=1, not significant."""
+        result = _mannwhitney([5.0, 5.0, 5.0], [5.0, 5.0, 5.0], higher_is_better=True)
+        assert result is not None
+        assert result["significant"] is False
+        assert result["pvalue"] == 1.0
+
+    def test_different_constants(self):
+        """Clearly distinct constant populations → significant."""
+        result = _mannwhitney([1.0, 1.0, 1.0], [9.0, 9.0, 9.0], higher_is_better=True)
+        assert result is not None
+        assert result["significant"] is True
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_clearly_different_distributions(self):
+        """Well-separated distributions should be significant."""
+        low = [1.0, 2.0, 3.0, 1.5, 2.5, 3.5, 1.0, 2.0]
+        high = [90.0, 91.0, 92.0, 93.0, 94.0, 95.0, 96.0, 97.0]
+        result = _mannwhitney(low, high, higher_is_better=True)
+        assert result is not None
+        assert result["significant"] is True
+        assert result["pvalue"] < 0.01
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_overlapping_distributions_not_significant(self):
+        """Heavily overlapping distributions should not be significant."""
+        a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+        b = [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+        result = _mannwhitney(a, b, higher_is_better=True)
+        assert result is not None
+        assert result["significant"] is False
+
+
+class TestMannWhitneyInMetrics:
+    """Test that Mann-Whitney integrates into continuous metrics correctly."""
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_cost_metric_has_mannwhitney(self):
+        m = CostMetric()
+        b = m.summarize(_col(*[cheap_fast(f"b{i}") for i in range(10)]))
+        c = m.summarize(_col(*[expensive_slow(f"c{i}") for i in range(10)]))
+        obs = m.compare(b, c)
+        assert obs.metadata.get("mannwhitney") is not None
+        assert obs.metadata["mannwhitney"]["significant"] is True
+        assert any("Mann-Whitney" in line for line in obs.detail_lines)
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_steps_metric_has_mannwhitney(self):
+        m = StepsMetric()
+        b = m.summarize(_col(*[cheap_fast(f"b{i}") for i in range(10)]))
+        c = m.summarize(_col(*[expensive_slow(f"c{i}") for i in range(10)]))
+        obs = m.compare(b, c)
+        assert obs.metadata.get("mannwhitney") is not None
+        assert any("Mann-Whitney" in line for line in obs.detail_lines)
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_duration_metric_has_mannwhitney(self):
+        m = DurationMetric()
+        b = m.summarize(_col(*[cheap_fast(f"b{i}") for i in range(10)]))
+        c = m.summarize(_col(*[expensive_slow(f"c{i}") for i in range(10)]))
+        obs = m.compare(b, c)
+        assert obs.metadata.get("mannwhitney") is not None
+        assert any("Mann-Whitney" in line for line in obs.detail_lines)
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_token_usage_metric_has_mannwhitney(self):
+        m = TokenUsageMetric()
+        b = m.summarize(_col(*[cheap_fast(f"b{i}") for i in range(10)]))
+        c = m.summarize(_col(*[expensive_slow(f"c{i}") for i in range(10)]))
+        obs = m.compare(b, c)
+        assert obs.metadata.get("mannwhitney") is not None
+        assert any("Mann-Whitney" in line for line in obs.detail_lines)
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_identical_data_not_significant(self):
+        """Identical populations → Mann-Whitney says not significant → direction=SAME."""
+        m = CostMetric()
+        traces = [cheap_fast(f"t{i}") for i in range(20)]
+        b = m.summarize(_col(*traces))
+        c = m.summarize(_col(*traces))
+        obs = m.compare(b, c)
+        assert obs.direction == Direction.SAME
+        mw = obs.metadata.get("mannwhitney")
+        assert mw is not None
+        assert mw["significant"] is False
+
+    @pytest.mark.skipif(not HAS_SCIPY, reason="scipy not installed")
+    def test_mannwhitney_overrides_threshold_direction(self):
+        """When delta exceeds noise threshold but Mann-Whitney says not significant,
+        direction should be SAME (statistical test takes precedence)."""
+        m = CostMetric()
+        # Create populations with overlapping distributions but slightly different medians
+        import random as rng
+        rng.seed(99)
+        # Both populations drawn from similar range — noise, not signal
+        b_traces = []
+        c_traces = []
+        for i in range(30):
+            b_traces.append(_trace_rich(f"b{i}", [
+                {"name": "step", "cost": rng.uniform(0.01, 0.10), "duration_s": 1.0},
+            ], outcome="success"))
+            c_traces.append(_trace_rich(f"c{i}", [
+                {"name": "step", "cost": rng.uniform(0.01, 0.10), "duration_s": 1.0},
+            ], outcome="success"))
+        b = m.summarize(_col(*b_traces))
+        c = m.summarize(_col(*c_traces))
+        obs = m.compare(b, c)
+        # If Mann-Whitney says not significant, direction should be SAME regardless of delta
+        if obs.metadata["mannwhitney"]["significant"] is False:
+            assert obs.direction == Direction.SAME
+
+    def test_single_trace_no_mannwhitney(self):
+        """Mann-Whitney needs ≥2 per side — should gracefully skip."""
+        m = CostMetric()
+        b = m.summarize(_col(cheap_fast("b1")))
+        c = m.summarize(_col(expensive_slow("c1")))
+        obs = m.compare(b, c)
+        # Should still work — just no Mann-Whitney in metadata
+        assert obs.metadata.get("mannwhitney") is None
+        assert obs.direction is not None
+
+    def test_summarize_stores_raw_values(self):
+        """All continuous metrics store _values in their summarize output."""
+        for MetricClass in [CostMetric, StepsMetric, DurationMetric, TokenUsageMetric]:
+            m = MetricClass()
+            s = m.summarize(_col(cheap_fast("t1"), expensive_slow("t2")))
+            assert "_values" in s, f"{MetricClass.__name__} missing _values"
+            assert len(s["_values"]) == 2

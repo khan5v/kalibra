@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import random
+import warnings
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
@@ -12,6 +13,15 @@ from typing import Any, ClassVar
 
 from kalibra.collection import TraceCollection
 from kalibra.converters.base import span_input_tokens, span_is_error, span_output_tokens
+
+# Optional scipy for statistical tests on continuous metrics.
+try:
+    from scipy.stats import mannwhitneyu as _mannwhitneyu
+    HAS_SCIPY = True
+except ImportError:
+    HAS_SCIPY = False
+
+_SCIPY_HINT_SHOWN = False
 
 # Minimum sample sizes for reliable metric computation.
 _MIN_N = 30       # below this, any metric is suspect
@@ -114,6 +124,51 @@ def _direction_from_delta(
     if abs(delta) <= noise_threshold:
         return Direction.SAME
     return Direction.UPGRADE if (delta > 0) == higher_is_better else Direction.DEGRADATION
+
+
+# ── Mann-Whitney U helper ─────────────────────────────────────────────────────
+
+def _maybe_scipy_hint() -> None:
+    """Show a one-time hint about installing scipy for better statistical tests."""
+    global _SCIPY_HINT_SHOWN
+    if HAS_SCIPY or _SCIPY_HINT_SHOWN:
+        return
+    _SCIPY_HINT_SHOWN = True
+    warnings.warn(
+        "scipy not installed — continuous metrics use threshold-based comparison only. "
+        "For Mann-Whitney U significance tests: pip install kalibra[stats]",
+        stacklevel=3,
+    )
+
+
+def _mannwhitney(
+    baseline_values: list[float],
+    current_values: list[float],
+    higher_is_better: bool,
+) -> dict | None:
+    """Run Mann-Whitney U test if scipy is available and samples are large enough.
+
+    Returns {"U": float, "pvalue": float, "significant": bool} or None.
+    """
+    if not HAS_SCIPY:
+        return None
+    if len(baseline_values) < 2 or len(current_values) < 2:
+        return None
+    # All identical values → no test needed (mannwhitneyu raises on zero variance).
+    if len(set(baseline_values)) <= 1 and len(set(current_values)) <= 1:
+        if baseline_values[0] == current_values[0]:
+            return {"U": 0.0, "pvalue": 1.0, "significant": False}
+        # Different constants — clearly significant.
+        return {"U": 0.0, "pvalue": 0.0, "significant": True}
+    try:
+        stat, pval = _mannwhitneyu(baseline_values, current_values, alternative="two-sided")
+        return {
+            "U": round(float(stat), 2),
+            "pvalue": round(float(pval), 6),
+            "significant": bool(pval < 0.05),
+        }
+    except ValueError:
+        return None
 
 
 # ── Built-in metrics ──────────────────────────────────────────────────────────
@@ -291,19 +346,22 @@ class CostMetric(ComparisonMetric):
             "ci_95": _bootstrap_ci(costs, stat_fn=_median) if len(costs) >= 2 else None,
             "all_zero": all(c == 0.0 for c in costs),
             "n": len(costs),
+            "_values": costs,
         }
 
     def compare(self, baseline: dict, current: dict) -> Observation:
-        warnings: list[str] = []
+        obs_warnings: list[str] = []
         if baseline["all_zero"] and current["all_zero"]:
-            warnings.append("All span costs are 0 — cost data may not be populated in your traces")
+            obs_warnings.append("All span costs are 0 — cost data may not be populated in your traces")
             return Observation(
                 name=self.name, description=self.description,
                 direction=Direction.NA,
                 baseline=baseline, current=current,
                 formatted="n/a — no cost data",
-                warnings=warnings,
+                warnings=obs_warnings,
             )
+
+        _maybe_scipy_hint()
 
         # Primary stat: median (robust to outliers). Delta computed on median.
         med_delta = _pct_delta(baseline["median"], current["median"])
@@ -321,15 +379,28 @@ class CostMetric(ComparisonMetric):
             if ci_lo != ci_hi:
                 details.append(f"95% CI [{ci_lo:+.1f}%, {ci_hi:+.1f}%]")
 
+        mw = _mannwhitney(baseline["_values"], current["_values"], self.higher_is_better)
+        if mw:
+            if mw["significant"]:
+                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — statistically significant")
+            else:
+                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant")
+
         direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
+        if mw and not mw["significant"]:
+            direction = Direction.SAME
+
         return Observation(
             name=self.name, description=self.description,
             direction=direction,
             baseline=baseline, current=current,
             delta=med_delta, formatted=formatted,
             detail_lines=details,
-            metadata={"avg_delta": avg_delta, "ci_95": current["ci_95"], "baseline_ci_95": baseline["ci_95"]},
-            warnings=warnings,
+            metadata={
+                "avg_delta": avg_delta, "ci_95": current["ci_95"],
+                "baseline_ci_95": baseline["ci_95"], "mannwhitney": mw,
+            },
+            warnings=obs_warnings,
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
@@ -354,9 +425,11 @@ class StepsMetric(ComparisonMetric):
             "median": _median(steps),
             "ci_95": _bootstrap_ci(steps, stat_fn=_median) if len(steps) >= 2 else None,
             "n": len(steps),
+            "_values": steps,
         }
 
     def compare(self, baseline: dict, current: dict) -> Observation:
+        _maybe_scipy_hint()
         med_delta = _pct_delta(baseline["median"], current["median"])
         avg_delta = _pct_delta(baseline["avg"], current["avg"])
         sign = "+" if med_delta >= 0 else ""
@@ -371,14 +444,27 @@ class StepsMetric(ComparisonMetric):
             if ci_lo != ci_hi:
                 details.append(f"95% CI [{ci_lo:+.1f}%, {ci_hi:+.1f}%]")
 
+        mw = _mannwhitney(baseline["_values"], current["_values"], self.higher_is_better)
+        if mw:
+            if mw["significant"]:
+                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — statistically significant")
+            else:
+                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant")
+
         direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
+        if mw and not mw["significant"]:
+            direction = Direction.SAME
+
         return Observation(
             name=self.name, description=self.description,
             direction=direction,
             baseline=baseline, current=current,
             delta=med_delta, formatted=formatted,
             detail_lines=details,
-            metadata={"avg_delta": avg_delta, "ci_95": current["ci_95"], "baseline_ci_95": baseline["ci_95"]},
+            metadata={
+                "avg_delta": avg_delta, "ci_95": current["ci_95"],
+                "baseline_ci_95": baseline["ci_95"], "mannwhitney": mw,
+            },
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
@@ -408,10 +494,12 @@ class DurationMetric(ComparisonMetric):
             "total": sum(durations),
             "ci_95": _bootstrap_ci(durations, stat_fn=_median) if len(durations) >= 2 else None,
             "n": len(durations),
+            "_values": durations,
         }
 
     def compare(self, baseline: dict, current: dict) -> Observation:
-        warnings: list[str] = []
+        obs_warnings: list[str] = []
+        _maybe_scipy_hint()
         avg_delta = _pct_delta(baseline["avg"], current["avg"])
         med_delta = _pct_delta(baseline["median"], current["median"])
         p95_delta = _pct_delta(baseline["p95"], current["p95"])
@@ -430,13 +518,23 @@ class DurationMetric(ComparisonMetric):
             if ci_lo != ci_hi:
                 details.append(f"95% CI [{ci_lo:+.1f}%, {ci_hi:+.1f}%]")
 
+        mw = _mannwhitney(baseline["_values"], current["_values"], self.higher_is_better)
+        if mw:
+            if mw["significant"]:
+                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — statistically significant")
+            else:
+                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant")
+
         small_n = min(baseline["n"], current["n"])
         if small_n < _MIN_P95_N:
-            warnings.append(
+            obs_warnings.append(
                 f"P95 computed from {small_n} traces — recommend ≥{_MIN_P95_N} for stable percentiles"
             )
 
         direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
+        if mw and not mw["significant"]:
+            direction = Direction.SAME
+
         return Observation(
             name=self.name, description=self.description,
             direction=direction,
@@ -449,8 +547,9 @@ class DurationMetric(ComparisonMetric):
                 "p95_delta_pct": p95_delta,
                 "ci_95": current["ci_95"],
                 "baseline_ci_95": baseline["ci_95"],
+                "mannwhitney": mw,
             },
-            warnings=warnings,
+            warnings=obs_warnings,
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
@@ -571,12 +670,13 @@ class TokenUsageMetric(ComparisonMetric):
             "ci_95": _bootstrap_ci(totals, stat_fn=_median) if len(totals) >= 2 else None,
             "all_zero": all(t == 0 for t in totals),
             "n": len(traces),
+            "_values": totals,
         }
 
     def compare(self, baseline: dict, current: dict) -> Observation:
-        warnings: list[str] = []
+        obs_warnings: list[str] = []
         if baseline["all_zero"] and current["all_zero"]:
-            warnings.append(
+            obs_warnings.append(
                 "All token counts are 0 — token data may not be populated in your traces"
             )
             return Observation(
@@ -584,8 +684,10 @@ class TokenUsageMetric(ComparisonMetric):
                 direction=Direction.NA,
                 baseline=baseline, current=current,
                 formatted="n/a — no token data",
-                warnings=warnings,
+                warnings=obs_warnings,
             )
+
+        _maybe_scipy_hint()
 
         # Primary stat: median total tokens
         med_delta = _pct_delta(baseline["median_total"], current["median_total"])
@@ -606,7 +708,17 @@ class TokenUsageMetric(ComparisonMetric):
             if ci_lo != ci_hi:
                 details.append(f"95% CI [{ci_lo:+.1f}%, {ci_hi:+.1f}%]")
 
+        mw = _mannwhitney(baseline["_values"], current["_values"], self.higher_is_better)
+        if mw:
+            if mw["significant"]:
+                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — statistically significant")
+            else:
+                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant")
+
         direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
+        if mw and not mw["significant"]:
+            direction = Direction.SAME
+
         return Observation(
             name=self.name, description=self.description,
             direction=direction,
@@ -617,8 +729,9 @@ class TokenUsageMetric(ComparisonMetric):
                 "avg_delta": avg_delta,
                 "ci_95": ci,
                 "baseline_ci_95": baseline["ci_95"],
+                "mannwhitney": mw,
             },
-            warnings=warnings,
+            warnings=obs_warnings,
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
