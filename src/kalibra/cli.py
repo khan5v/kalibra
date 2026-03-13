@@ -94,6 +94,24 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
             raise click.UsageError(f"Sources path is not a directory: {sources_dir}")
 
     config = CompareConfig.load(config_path)
+
+    # Validate threshold expressions early — before loading any data.
+    from kalibra.compare import ThresholdError, validate_require_exprs
+    from kalibra.config import resolve_metrics
+    from kalibra.metrics import DEFAULT_METRICS
+
+    active_metrics = resolve_metrics(config, DEFAULT_METRICS)
+    known_fields: set[str] = set()
+    for m in active_metrics:
+        known_fields.update(m.threshold_field_names())
+    all_require_raw = list(config.require) + list(require)
+    try:
+        validate_require_exprs(all_require_raw, known_fields)
+    except ThresholdError as exc:
+        _print_threshold_error(exc)
+        ctx = click.get_current_context()
+        ctx.exit(2)
+
     sources = load_sources(sources_dir)
     baseline_path = _resolve_source(baseline, sources, refresh, cache_dir=cache_dir)
     current_path = _resolve_source(current, sources, refresh, cache_dir=cache_dir)
@@ -108,10 +126,11 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
                 f"  If this is a file path, check the path is correct."
             )
 
+    from kalibra.collection import TraceCollection
+    from kalibra.compare import compare_collections
+
     # CLI override flags → apply overrides to loaded traces before comparison
     if outcome_field or cost_attr:
-        from kalibra.collection import TraceCollection
-        from kalibra.compare import compare_collections
         from kalibra.config import CostConfig, OutcomeConfig, SourceConfig
         from kalibra.converters import load_traces
         from kalibra.converters.base import apply_overrides
@@ -132,24 +151,17 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
 
         baseline_col = TraceCollection.from_traces(b_traces, source=baseline_path)
         current_col = TraceCollection.from_traces(c_traces, source=current_path)
-        result = compare_collections(
-            baseline_col, current_col,
-            require=list(require) or None, config=config,
-        )
     else:
-        from kalibra.collection import TraceCollection
-        from kalibra.compare import compare_collections
-
         click.echo(f"Loading {baseline_path}")
         baseline_col = TraceCollection.from_path(baseline_path)
 
         click.echo(f"Loading {current_path}")
         current_col = TraceCollection.from_path(current_path)
 
-        result = compare_collections(
-            baseline_col, current_col,
-            require=list(require) or None, config=config,
-        )
+    result = compare_collections(
+        baseline_col, current_col,
+        require=list(require) or None, config=config,
+    )
 
     text = render(result, out_format)
 
@@ -361,6 +373,54 @@ def validate(path: str):
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
+
+
+def _print_threshold_error(exc: Exception) -> None:
+    """Render threshold validation errors in the same style as the report."""
+    bar = click.style("─" * 58, dim=True)
+    errors = str(exc).split("\n\n")
+
+    click.echo()
+    click.echo(f"  {click.style('Kalibra', bold=True)}  {click.style('·', dim=True)}  {click.style('invalid threshold', fg='yellow')}")
+    click.echo(f"  {bar}")
+
+    for block in errors:
+        lines = block.strip().splitlines()
+        if not lines:
+            continue
+        # First line is the error headline
+        click.echo(f"  {click.style('▸', fg='yellow')} {_style_error_headline(lines[0])}")
+        for line in lines[1:]:
+            click.echo(f"    {_style_error_detail(line.strip())}")
+        click.echo()
+
+    click.echo(f"  {bar}")
+    click.echo(f"  {click.style('Hint:', dim=True)} kalibra compare {click.style('--metrics', fg='cyan')} to see all fields")
+    click.echo()
+
+
+def _style_error_headline(line: str) -> str:
+    """Style the main error line — bold the quoted field/expression."""
+    import re
+    # Bold the quoted strings (field names, expressions)
+    def _bold_quotes(m: re.Match) -> str:
+        return click.style(m.group(0), bold=True)
+    return re.sub(r"'[^']*'", _bold_quotes, line)
+
+
+def _style_error_detail(line: str) -> str:
+    """Style a detail/hint line — highlight suggestions."""
+    if line.startswith("Did you mean:"):
+        prefix = click.style("Did you mean: ", dim=True)
+        suggestions = line[len("Did you mean: "):]
+        return prefix + click.style(suggestions, fg="cyan")
+    if line.startswith("Expected"):
+        return click.style(line, dim=True)
+    if line.startswith("Operators:"):
+        return click.style(line, dim=True)
+    if line.startswith("The right-hand"):
+        return click.style(line, dim=True)
+    return click.style(line, dim=True)
 
 
 def _print_metrics() -> None:

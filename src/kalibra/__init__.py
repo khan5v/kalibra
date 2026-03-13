@@ -29,7 +29,7 @@ Programmatic API::
 __version__ = "0.1.0"
 
 from kalibra.collection import TraceCollection
-from kalibra.compare import CompareResult, ComparisonResult, ValidationResult, Gate, compare, compare_collections
+from kalibra.compare import CompareResult, ComparisonResult, ValidationResult, Gate, ThresholdError, compare, compare_collections
 from kalibra.config import CompareConfig
 from kalibra.converters.base import Trace, make_span
 from opentelemetry.sdk.trace import ReadableSpan
@@ -47,6 +47,7 @@ __all__ = [
     "ComparisonResult",
     "ValidationResult",
     "Gate",
+    "ThresholdError",
     "Direction",
     "Observation",
     "MetricResult",      # backwards compat alias for Observation

@@ -142,6 +142,13 @@ def compare_collections(
     else:
         active = resolve_metrics(config, DEFAULT_METRICS)
 
+    # Parse and validate threshold expressions early — before running metrics.
+    all_require_raw = list(config.require) + list(require or [])
+    known_fields: set[str] = set()
+    for m in active:
+        known_fields.update(m.threshold_field_names())
+    parsed_exprs = validate_require_exprs(all_require_raw, known_fields)
+
     # Dataset-level warnings — before running any metric.
     result_warnings: list[str] = []
     n_b, n_c = len(baseline), len(current)
@@ -174,8 +181,7 @@ def compare_collections(
         observations[obs.name] = obs
         threshold_values.update(m.threshold_fields(obs))
 
-    all_require = list(config.require) + list(require or [])
-    gates = _eval_thresholds(threshold_values, all_require)
+    gates = _eval_thresholds(threshold_values, parsed_exprs)
 
     return CompareResult(
         baseline_source=baseline.source,
@@ -209,7 +215,7 @@ def _rollup_direction(observations: dict[str, Observation]) -> Direction:
     return Direction.SAME
 
 
-# ── Threshold evaluation ───────────────────────────────────────────────────────
+# ── Threshold parsing and evaluation ──────────────────────────────────────────
 
 _OPS = {
     ">=": lambda a, b: a >= b,
@@ -219,37 +225,126 @@ _OPS = {
     "=":  lambda a, b: a == b,
 }
 
+_OP_TOKENS = (">=", "<=", ">", "<", "=")
 
-def _eval_thresholds(values: dict[str, float], exprs: list[str]) -> list[Gate]:
-    gates = []
+
+@dataclass
+class ParsedExpr:
+    """A parsed threshold expression: field op value."""
+    raw: str
+    field: str
+    op: str
+    value: float
+
+
+class ThresholdError(Exception):
+    """Raised when a --require expression is invalid."""
+
+
+def parse_require_expr(expr: str) -> ParsedExpr:
+    """Parse a single threshold expression like ``'success_rate_delta >= -2'``.
+
+    Raises ThresholdError with an actionable message on bad syntax.
+    """
+    expr = expr.strip()
+    if not expr:
+        raise ThresholdError("Empty threshold expression.")
+
+    for op in _OP_TOKENS:
+        if op in expr:
+            parts = expr.split(op, 1)
+            field_str = parts[0].strip()
+            val_str = parts[1].strip()
+
+            if not field_str:
+                raise ThresholdError(
+                    f"Missing field name in: {expr!r}\n"
+                    f"  Expected: field_name {op} number\n"
+                    f"  Run 'kalibra compare --metrics' to see available fields."
+                )
+            if not val_str:
+                raise ThresholdError(
+                    f"Missing threshold value in: {expr!r}\n"
+                    f"  Expected: {field_str} {op} number"
+                )
+            try:
+                value = float(val_str)
+            except ValueError:
+                raise ThresholdError(
+                    f"Invalid threshold value {val_str!r} in: {expr!r}\n"
+                    f"  The right-hand side must be a number, e.g.: {field_str} {op} 5"
+                ) from None
+
+            return ParsedExpr(raw=expr, field=field_str, op=op, value=value)
+
+    raise ThresholdError(
+        f"No operator found in: {expr!r}\n"
+        f"  Expected format: field_name >= number\n"
+        f"  Operators: >=  <=  >  <  ="
+    )
+
+
+def validate_require_exprs(
+    exprs: list[str],
+    known_fields: set[str],
+) -> list[ParsedExpr]:
+    """Parse and validate all threshold expressions against known fields.
+
+    Raises ThresholdError on syntax errors or unrecognized field names.
+    Returns parsed expressions on success.
+    """
+    from difflib import get_close_matches
+
+    parsed = []
+    errors = []
+
     for expr in exprs:
         expr = expr.strip()
         if not expr:
             continue
-        gates.append(_eval_expr(expr, values))
+        try:
+            p = parse_require_expr(expr)
+        except ThresholdError as exc:
+            errors.append(str(exc))
+            continue
+
+        if p.field not in known_fields:
+            msg = f"Unknown field {p.field!r} in: {p.raw!r}"
+            matches = get_close_matches(p.field, sorted(known_fields), n=3, cutoff=0.5)
+            if matches:
+                suggestions = ", ".join(matches)
+                msg += f"\n  Did you mean: {suggestions}"
+            errors.append(msg)
+            continue
+
+        parsed.append(p)
+
+    if errors:
+        raise ThresholdError("\n\n".join(errors))
+
+    return parsed
+
+
+def _eval_thresholds(
+    values: dict[str, float],
+    parsed_exprs: list[ParsedExpr],
+) -> list[Gate]:
+    """Evaluate pre-parsed threshold expressions against computed metric values."""
+    gates = []
+    for p in parsed_exprs:
+        if p.field not in values:
+            gates.append(Gate(
+                expr=p.raw,
+                passed=True,
+                actual=float("nan"),
+                warning=f"Metric produced no data for {p.field!r} — gate skipped",
+            ))
+            continue
+        actual = values[p.field]
+        gates.append(Gate(
+            expr=p.raw,
+            passed=_OPS[p.op](actual, p.value),
+            actual=round(actual, 4),
+            metric_name=p.field.split("_delta")[0] if "_delta" in p.field else None,
+        ))
     return gates
-
-
-def _eval_expr(expr: str, values: dict[str, float]) -> Gate:
-    for op in (">=", "<=", ">", "<", "="):
-        if op in expr:
-            field, val_str = (s.strip() for s in expr.split(op, 1))
-            try:
-                threshold = float(val_str)
-            except ValueError:
-                return Gate(expr=expr, passed=False, actual=float("nan"))
-            if field not in values:
-                return Gate(
-                    expr=expr,
-                    passed=True,
-                    actual=float("nan"),
-                    warning=f"Field {field!r} not available — metric produced no data, gate skipped",
-                )
-            actual = values[field]
-            return Gate(
-                expr=expr,
-                passed=_OPS[op](actual, threshold),
-                actual=round(actual, 4),
-                metric_name=field.split("_delta")[0] if "_delta" in field else None,
-            )
-    raise ValueError(f"Cannot parse threshold expression: {expr!r}")
