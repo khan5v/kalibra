@@ -14,7 +14,9 @@ def get_connector(source: str):
         sk = os.environ.get("LANGFUSE_SECRET_KEY", "")
         if not pk or not sk:
             raise RuntimeError(
-                "Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY environment variables."
+                "Missing Langfuse credentials.\n"
+                "  export LANGFUSE_PUBLIC_KEY=pk-lf-...\n"
+                "  export LANGFUSE_SECRET_KEY=sk-lf-..."
             )
         return LangfuseConnector(host=host, public_key=pk, secret_key=sk)
 
@@ -22,7 +24,10 @@ def get_connector(source: str):
         from kalibra.connectors.langsmith import LangSmithConnector
         api_key = os.environ.get("LANGSMITH_API_KEY", "")
         if not api_key:
-            raise RuntimeError("Set LANGSMITH_API_KEY environment variable.")
+            raise RuntimeError(
+                "Missing LangSmith credentials.\n"
+                "  export LANGSMITH_API_KEY=lsv2_pt_..."
+            )
         api_url = os.environ.get("LANGSMITH_API_URL") or None
         return LangSmithConnector(api_key=api_key, api_url=api_url)
 

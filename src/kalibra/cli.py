@@ -423,6 +423,20 @@ def _style_error_detail(line: str) -> str:
     return click.style(line, dim=True)
 
 
+def _print_connector_error(source: str, message: str) -> None:
+    """Render a connector error in the same style as the report."""
+    bar = click.style("─" * 58, dim=True)
+    lines = message.strip().splitlines()
+    click.echo()
+    click.echo(f"  {click.style('Kalibra', bold=True)}  {click.style('·', dim=True)}  {click.style('connection failed', fg='yellow')}")
+    click.echo(f"  {bar}")
+    click.echo(f"  {click.style('▸', fg='yellow')} {click.style(source, bold=True)}: {lines[0]}")
+    for line in lines[1:]:
+        click.echo(f"    {click.style(line.strip(), dim=True)}")
+    click.echo(f"  {bar}")
+    click.echo()
+
+
 def _print_metrics() -> None:
     """Print all available metrics and their threshold fields."""
     from kalibra.config import CompareConfig, resolve_metrics
@@ -533,7 +547,13 @@ def _do_pull(source: str, project: str, since: str, limit: int, output: str,
         if session_id:
             extra += f", session: {session_id}"
         click.echo(f"Connecting to {source} (project: {project}, since: {since}{extra})...")
-        connector = get_connector(source)
+
+        try:
+            connector = get_connector(source)
+        except RuntimeError as exc:
+            _print_connector_error(source, str(exc))
+            raise SystemExit(1) from None
+
         project_key = "project_id" if source == "langfuse" else "project_name"
         fetch_kwargs: dict = {
             project_key: project,
@@ -545,10 +565,32 @@ def _do_pull(source: str, project: str, since: str, limit: int, output: str,
             fetch_kwargs["tags"] = tags
         if session_id:
             fetch_kwargs["session_id"] = session_id
-        traces = connector.fetch(**fetch_kwargs)
+
+        try:
+            traces = connector.fetch(**fetch_kwargs)
+        except RuntimeError as exc:
+            _print_connector_error(source, str(exc))
+            raise SystemExit(1) from None
 
     # Apply outcome/cost overrides from source config
     apply_overrides(traces, source_config)
+
+    if not traces and source != "jsonl":
+        bar = click.style("─" * 58, dim=True)
+        click.echo()
+        click.echo(f"  {click.style('Kalibra', bold=True)}  {click.style('·', dim=True)}  {click.style('no traces found', fg='yellow')}")
+        click.echo(f"  {bar}")
+        click.echo(f"  {click.style('▸', fg='yellow')} {click.style(source, bold=True)} returned 0 traces for project {click.style(project, bold=True)}")
+        hints = ["Check that the project name is correct"]
+        if tags:
+            hints.append(f"Tags filter: {tags} — try without tags to verify data exists")
+        if session_id:
+            hints.append(f"Session filter: {session_id} — try without session to verify")
+        hints.append(f"Time window: {since} — try a wider range (e.g. 30d)")
+        for h in hints:
+            click.echo(f"    {click.style(h, dim=True)}")
+        click.echo(f"  {bar}")
+        click.echo()
 
     click.echo(f"Loaded {len(traces):,} traces.")
     save_jsonl(traces, output)
