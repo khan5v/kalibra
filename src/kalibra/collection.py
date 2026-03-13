@@ -31,7 +31,7 @@ class TraceCollection:
 
     @classmethod
     def from_path(cls, path: str, progress: bool = True) -> "TraceCollection":
-        """Load from a file or directory (SWE-bench, JSONL — auto-detected)."""
+        """Load from a file or directory (JSONL)."""
         from kalibra.converters import load_traces
         traces = load_traces(path, trace_format="auto", progress=progress)
         return cls(traces, source=path)

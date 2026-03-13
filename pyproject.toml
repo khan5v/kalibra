@@ -29,7 +29,6 @@ dependencies = [
     "httpx>=0.27",              # Langfuse REST connector
     "langsmith>=0.1",           # LangSmith SDK connector
     "opentelemetry-sdk>=1.20",  # ReadableSpan, SpanContext, StatusCode
-    "pandas>=2.0",              # swebench parquet ingestion
     "pyyaml>=6.0",              # config parsing
 ]
 

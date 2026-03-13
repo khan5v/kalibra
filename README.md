@@ -30,7 +30,7 @@ Direction    ▲ IMPROVED
 ▲ Token eff.      8,300 → 6,200 tokens/success  -25.3%  (580→620 successes)
 ▲ Cost / quality  $0.048 → $0.032 per success  -33.3%  (580/1240 → 620/1187 succeeded)
 ≈ Per-task        1,103 matched — ✓ 31 improved, ✗ 8 regressed
-                  regressed: django__django-15498, flask__flask-5012 (+6 more)
+                  regressed: extract-receipt-data, classify-support-ticket (+6 more)
 
 Thresholds
   [  OK] success_rate_delta >= -2     actual: 3.80
@@ -162,7 +162,6 @@ Ready-to-use configs in `config/examples/`. Use with `--config`:
 | **`ci-gate.yml`** | CI/CD pipelines | Gates on success rate, regressions, cost, latency, tokens. Exits 1 on violation. |
 | **`model-comparison.yml`** | Evaluating a model swap | Cost-effectiveness focus: cost/quality, token efficiency, no hard gates. |
 | **`cost-control.yml`** | Budget enforcement | Absolute limits: total run cost, per-trace cost, cost per success, token cap. |
-| **`swebench.yml`** | SWE-bench benchmarks | Tight regression detection: per-task failures, token efficiency per solve. |
 | **`quick-check.yml`** | Local development | Minimal metrics, no gates. Fast iteration on prompt changes. |
 
 ```bash
@@ -328,7 +327,6 @@ print("passed:", result.thresholds_passed)
 
 Kalibra reads:
 - **JSONL** — portable format, produced by `kalibra pull`
-- **SWE-bench** `.traj` files and parquet directories
 - **Langfuse** / **LangSmith** — via connectors with `kalibra pull`
 
 Internally, all traces are OTel `ReadableSpan` trees using [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
@@ -337,7 +335,7 @@ Internally, all traces are OTel `ReadableSpan` trees using [GenAI semantic conve
 
 ## Synthetic trace generator
 
-Generate realistic test traces calibrated against real SWE-bench data:
+Generate realistic test traces for Langfuse and LangSmith:
 
 ```bash
 # Langfuse

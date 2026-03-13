@@ -979,7 +979,11 @@ def _trace_path(trace) -> str:
 
 
 def _extract_task_id(trace_id: str) -> str:
-    """SWE-bench: instance_id__model__row_idx → strip last two __ segments."""
+    """Extract a stable task ID from a trace ID.
+
+    Strips ``__<model>__<index>`` suffixes so that traces from different runs
+    of the same task are matched together for per-task comparison.
+    """
     parts = trace_id.split("__")
     if len(parts) >= 3 and parts[-1].isdigit():
         return "__".join(parts[:-2])

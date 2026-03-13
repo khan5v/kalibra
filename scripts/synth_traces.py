@@ -32,44 +32,42 @@ from datetime import datetime, timedelta, timezone
 # Stable task IDs shared between baseline and current so per_task matching works.
 
 TASK_POOL = [
-    "django__django-14787",
-    "django__django-15061",
-    "django__django-15498",
-    "flask__flask-4935",
-    "flask__flask-5012",
-    "requests__requests-6028",
-    "requests__requests-6179",
-    "sympy__sympy-21847",
-    "sympy__sympy-22714",
-    "sympy__sympy-23262",
-    "scikit-learn__sklearn-25638",
-    "scikit-learn__sklearn-25747",
-    "matplotlib__matplotlib-25311",
-    "matplotlib__matplotlib-25442",
-    "pandas__pandas-52847",
-    "pandas__pandas-53112",
-    "sphinx__sphinx-11445",
-    "sphinx__sphinx-11502",
-    "astropy__astropy-14182",
-    "pytest__pytest-11143",
-    "pytest__pytest-11178",
-    "black__black-3820",
-    "mypy__mypy-16141",
-    "pylint__pylint-8929",
-    "tornado__tornado-6901",
-    "httpx__httpx-2879",
-    "pydantic__pydantic-8504",
-    "fastapi__fastapi-10178",
-    "celery__celery-8226",
-    "sqlalchemy__sqla-10371",
+    "onboard-user-flow",
+    "summarize-invoice",
+    "extract-receipt-data",
+    "classify-support-ticket",
+    "draft-email-reply",
+    "parse-legal-clause",
+    "generate-report",
+    "validate-address",
+    "translate-document",
+    "reconcile-payment",
+    "search-knowledge-base",
+    "resolve-customer-issue",
+    "plan-travel-itinerary",
+    "review-pull-request",
+    "triage-bug-report",
+    "schedule-meeting",
+    "analyze-sentiment",
+    "generate-test-cases",
+    "fill-form-fields",
+    "compare-product-specs",
+    "verify-identity",
+    "route-support-request",
+    "process-refund",
+    "check-compliance",
+    "summarize-meeting-notes",
+    "extract-key-entities",
+    "draft-contract-section",
+    "audit-expense-report",
+    "prioritize-backlog",
+    "generate-faq-answer",
 ]
 
 # ── Execution path templates ─────────────────────────────────────────────────
-# Modeled from real SWE-bench / Nebius traces:
-#   - Solved traces:   median 13 steps, edit-heavy, fewer navigation loops
-#   - Unsolved traces: median 19 steps, navigation-heavy, deep retry loops
-# Step names match real SWE-agent actions: edit, open, python, search_dir,
-# search_file, find_file, create, ls, grep, scroll_down, goto, submit.
+# Modeled from typical agent execution patterns:
+#   - Successful traces: fewer steps, targeted actions
+#   - Failed traces: more navigation, retry loops, deeper exploration
 
 BASELINE_PATHS = {
     # 13 steps — classic retry-heavy: navigate, fail, navigate more, re-edit
@@ -148,8 +146,8 @@ CURRENT_PATHS = {
 }
 
 # ── Per-step profiles ────────────────────────────────────────────────────────
-# Names match real SWE-agent actions. Profiles model Claude API calls where
-# applicable. Navigation/tool-only steps have no LLM cost.
+# Step profiles model agent tool calls and LLM interactions.
+# Navigation/tool-only steps have no LLM cost.
 
 STEP_PROFILES = {
     # — LLM-backed actions (agent reasons + issues command) —
@@ -254,10 +252,8 @@ STEP_PROFILES = {
 }
 
 # ── Mode configs ─────────────────────────────────────────────────────────────
-# Success rates calibrated from real Nebius data:
-#   llama-70b: 17.6%, llama-405b: 47.5%
-#   Baseline models weaker agent (~20%), current models improved agent (~38%).
-# Failure multiplier: real unsolved traces are ~2x longer than solved.
+# Baseline: weaker agent (~20% success), current: improved agent (~38% success).
+# Failed traces are longer (more retries, deeper exploration).
 
 MODES = {
     "baseline": {

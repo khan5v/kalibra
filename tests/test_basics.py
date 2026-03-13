@@ -159,8 +159,8 @@ def test_per_task_improvement():
     assert len(result.metadata["regressions"]) == 0
 
 
-def test_extract_task_id_swebench():
-    assert _extract_task_id("django__django-12345__gpt4__0") == "django__django-12345"
+def test_extract_task_id():
+    assert _extract_task_id("my-task__sonnet__0") == "my-task"
     assert _extract_task_id("simple") == "simple"
 
 

@@ -52,7 +52,7 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
 
     \b
     --baseline and --current accept:
-      - A file or directory path (SWE-bench, JSONL — auto-detected)
+      - A file or directory path (JSONL)
       - @name  — a named source from sources.yml (pulls and caches automatically)
 
     \b
