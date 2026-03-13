@@ -99,6 +99,11 @@ class ComparisonMetric(ABC):
     noise_threshold: ClassVar[float] = 0.5
     higher_is_better: ClassVar[bool] = True
 
+    #: Single source of truth for threshold field names and descriptions.
+    #: Override in subclasses. ``threshold_field_names()`` reads from this,
+    #: and ``threshold_fields()`` must only return keys defined here.
+    _fields: ClassVar[dict[str, str]] = {}
+
     @abstractmethod
     def summarize(self, col: TraceCollection) -> Any:
         """Reduce a collection to a summary value for this metric."""
@@ -113,12 +118,8 @@ class ComparisonMetric(ABC):
 
     @classmethod
     def threshold_field_names(cls) -> dict[str, str]:
-        """Return {field_name: description} for all threshold fields this metric exposes.
-
-        Used by ``kalibra compare --metrics`` to show available gate fields.
-        Override in subclasses. Default: empty.
-        """
-        return {}
+        """Return {field_name: description} for all threshold fields this metric exposes."""
+        return cls._fields
 
 
 # ── Direction helper ──────────────────────────────────────────────────────────
@@ -187,6 +188,10 @@ class SuccessRateMetric(ComparisonMetric):
     description = "Task success rate delta with statistical significance"
     noise_threshold = 0.5
     higher_is_better = True
+    _fields = {
+        "success_rate_delta": "Change in success rate (percentage points)",
+        "success_rate": "Current success rate (%)",
+    }
 
     def summarize(self, col: TraceCollection) -> dict:
         traces = col.all_traces()
@@ -259,13 +264,6 @@ class SuccessRateMetric(ComparisonMetric):
             warnings=warnings,
         )
 
-    @classmethod
-    def threshold_field_names(cls) -> dict[str, str]:
-        return {
-            "success_rate_delta": "Change in success rate (percentage points)",
-            "success_rate": "Current success rate (%)",
-        }
-
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         if result.delta is None:
             return {}
@@ -280,6 +278,10 @@ class PerTaskMetric(ComparisonMetric):
     description = "Per-task regression and improvement detection"
     noise_threshold = 0.0
     higher_is_better = True
+    _fields = {
+        "regressions": "Number of regressed tasks",
+        "improvements": "Number of improved tasks",
+    }
 
     def summarize(self, col: TraceCollection) -> dict[str, str]:
         """Returns {task_id: outcome} for all traces with a known outcome."""
@@ -337,13 +339,6 @@ class PerTaskMetric(ComparisonMetric):
             warnings=warnings,
         )
 
-    @classmethod
-    def threshold_field_names(cls) -> dict[str, str]:
-        return {
-            "regressions": "Number of regressed tasks",
-            "improvements": "Number of improved tasks",
-        }
-
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
             "regressions":  result.metadata["n_regressions"],
@@ -356,6 +351,11 @@ class CostMetric(ComparisonMetric):
     description = "Cost per trace — median, average, and total"
     noise_threshold = 3.0
     higher_is_better = False
+    _fields = {
+        "cost_delta_pct": "Median cost change (%)",
+        "total_cost": "Total cost of current run",
+        "avg_cost": "Average cost per trace",
+    }
 
     def summarize(self, col: TraceCollection) -> dict:
         costs = [t.total_cost for t in col.all_traces()]
@@ -426,14 +426,6 @@ class CostMetric(ComparisonMetric):
             warnings=obs_warnings,
         )
 
-    @classmethod
-    def threshold_field_names(cls) -> dict[str, str]:
-        return {
-            "cost_delta_pct": "Median cost change (%)",
-            "total_cost": "Total cost of current run",
-            "avg_cost": "Average cost per trace",
-        }
-
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         fields: dict[str, float] = {}
         if result.delta is not None:
@@ -448,6 +440,11 @@ class StepsMetric(ComparisonMetric):
     description = "Steps (spans) per trace — median and average"
     noise_threshold = 3.0
     higher_is_better = False
+    _fields = {
+        "steps_delta_pct": "Median steps change (%)",
+        "avg_steps": "Average steps per trace",
+        "median_steps": "Median steps per trace",
+    }
 
     def summarize(self, col: TraceCollection) -> dict:
         steps = [float(len(t.spans)) for t in col.all_traces()]
@@ -498,14 +495,6 @@ class StepsMetric(ComparisonMetric):
             },
         )
 
-    @classmethod
-    def threshold_field_names(cls) -> dict[str, str]:
-        return {
-            "steps_delta_pct": "Median steps change (%)",
-            "avg_steps": "Average steps per trace",
-            "median_steps": "Median steps per trace",
-        }
-
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
             "steps_delta_pct": result.delta,
@@ -519,6 +508,12 @@ class DurationMetric(ComparisonMetric):
     description = "Trace duration — average, median, and P95 latency"
     noise_threshold = 5.0
     higher_is_better = False
+    _fields = {
+        "duration_delta_pct": "Average duration change (%)",
+        "duration_median_delta_pct": "Median duration change (%)",
+        "duration_p95_delta_pct": "P95 duration change (%)",
+        "total_duration": "Total duration of current run (s)",
+    }
 
     def summarize(self, col: TraceCollection) -> dict:
         durations = [t.duration for t in col.all_traces()]
@@ -591,15 +586,6 @@ class DurationMetric(ComparisonMetric):
             warnings=obs_warnings,
         )
 
-    @classmethod
-    def threshold_field_names(cls) -> dict[str, str]:
-        return {
-            "duration_delta_pct": "Average duration change (%)",
-            "duration_median_delta_pct": "Median duration change (%)",
-            "duration_p95_delta_pct": "P95 duration change (%)",
-            "total_duration": "Total duration of current run (s)",
-        }
-
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
             "duration_delta_pct":        result.delta,
@@ -614,6 +600,7 @@ class ToolErrorRateMetric(ComparisonMetric):
     description = "Fraction of tool invocations that returned an error"
     noise_threshold = 0.5
     higher_is_better = False
+    _fields = {"tool_error_rate_delta": "Error rate change (percentage points)"}
 
     def summarize(self, col: TraceCollection) -> dict:
         spans = [s for t in col.all_traces() for s in t.spans]
@@ -642,10 +629,6 @@ class ToolErrorRateMetric(ComparisonMetric):
             warnings=warnings,
         )
 
-    @classmethod
-    def threshold_field_names(cls) -> dict[str, str]:
-        return {"tool_error_rate_delta": "Error rate change (percentage points)"}
-
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {"tool_error_rate_delta": result.delta}
 
@@ -655,6 +638,7 @@ class PathDistributionMetric(ComparisonMetric):
     description = "Jaccard similarity of top execution paths"
     noise_threshold = 0.0
     higher_is_better = True
+    _fields = {"path_jaccard": "Jaccard similarity of top execution paths"}
 
     def summarize(self, col: TraceCollection) -> dict:
         traces = col.all_traces()
@@ -698,10 +682,6 @@ class PathDistributionMetric(ComparisonMetric):
             warnings=warnings,
         )
 
-    @classmethod
-    def threshold_field_names(cls) -> dict[str, str]:
-        return {"path_jaccard": "Jaccard similarity of top execution paths"}
-
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {"path_jaccard": result.metadata["jaccard"]}
 
@@ -711,6 +691,11 @@ class TokenUsageMetric(ComparisonMetric):
     description = "Token consumption — input, output, and total"
     noise_threshold = 3.0
     higher_is_better = False
+    _fields = {
+        "token_delta_pct": "Median token usage change (%)",
+        "total_tokens": "Total tokens in current run",
+        "avg_tokens": "Average tokens per trace",
+    }
 
     def summarize(self, col: TraceCollection) -> dict:
         traces = col.all_traces()
@@ -790,14 +775,6 @@ class TokenUsageMetric(ComparisonMetric):
             warnings=obs_warnings,
         )
 
-    @classmethod
-    def threshold_field_names(cls) -> dict[str, str]:
-        return {
-            "token_delta_pct": "Median token usage change (%)",
-            "total_tokens": "Total tokens in current run",
-            "avg_tokens": "Average tokens per trace",
-        }
-
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         fields: dict[str, float] = {}
         if result.delta is not None:
@@ -812,6 +789,7 @@ class TokenEfficiencyMetric(ComparisonMetric):
     description = "Tokens per successful task"
     noise_threshold = 5.0
     higher_is_better = False
+    _fields = {"token_efficiency_delta_pct": "Tokens-per-success change (%)"}
 
     def summarize(self, col: TraceCollection) -> dict:
         successes = [t for t in col.all_traces() if t.outcome == "success"]
@@ -867,10 +845,6 @@ class TokenEfficiencyMetric(ComparisonMetric):
             warnings=warnings,
         )
 
-    @classmethod
-    def threshold_field_names(cls) -> dict[str, str]:
-        return {"token_efficiency_delta_pct": "Tokens-per-success change (%)"}
-
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         if result.delta is None:
             return {}
@@ -882,6 +856,10 @@ class CostQualityMetric(ComparisonMetric):
     description = "Cost per successful task (total cost / successes)"
     noise_threshold = 5.0
     higher_is_better = False
+    _fields = {
+        "cost_quality_delta_pct": "Cost-per-success change (%)",
+        "cost_per_success": "Current cost per successful task",
+    }
 
     def summarize(self, col: TraceCollection) -> dict:
         traces = col.all_traces()
@@ -942,13 +920,6 @@ class CostQualityMetric(ComparisonMetric):
             delta=delta, formatted=formatted,
             warnings=warnings,
         )
-
-    @classmethod
-    def threshold_field_names(cls) -> dict[str, str]:
-        return {
-            "cost_quality_delta_pct": "Cost-per-success change (%)",
-            "cost_per_success": "Current cost per successful task",
-        }
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         if result.delta is None:

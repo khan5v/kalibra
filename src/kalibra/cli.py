@@ -106,7 +106,7 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
         known_fields.update(m.threshold_field_names())
     all_require_raw = list(config.require) + list(require)
     try:
-        validate_require_exprs(all_require_raw, known_fields)
+        parsed_require = validate_require_exprs(all_require_raw, known_fields)
     except ThresholdError as exc:
         _print_threshold_error(exc)
         ctx = click.get_current_context()
@@ -160,7 +160,8 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
 
     result = compare_collections(
         baseline_col, current_col,
-        require=list(require) or None, config=config,
+        config=config,
+        _parsed_require=parsed_require,
     )
 
     text = render(result, out_format)

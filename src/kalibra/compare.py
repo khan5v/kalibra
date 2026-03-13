@@ -100,6 +100,8 @@ def compare_collections(
     metrics: list[ComparisonMetric] | None = None,
     require: list[str] | None = None,
     config: CompareConfig | None = None,
+    *,
+    _parsed_require: list[ParsedExpr] | None = None,
 ) -> CompareResult:
     """Compare two in-memory TraceCollections — the programmatic entry point.
 
@@ -142,12 +144,15 @@ def compare_collections(
     else:
         active = resolve_metrics(config, DEFAULT_METRICS)
 
-    # Parse and validate threshold expressions early — before running metrics.
-    all_require_raw = list(config.require) + list(require or [])
-    known_fields: set[str] = set()
-    for m in active:
-        known_fields.update(m.threshold_field_names())
-    parsed_exprs = validate_require_exprs(all_require_raw, known_fields)
+    # Parse and validate threshold expressions — skip if caller pre-validated.
+    if _parsed_require is not None:
+        parsed_exprs = _parsed_require
+    else:
+        all_require_raw = list(config.require) + list(require or [])
+        known_fields: set[str] = set()
+        for m in active:
+            known_fields.update(m.threshold_field_names())
+        parsed_exprs = validate_require_exprs(all_require_raw, known_fields)
 
     # Dataset-level warnings — before running any metric.
     result_warnings: list[str] = []
