@@ -17,4 +17,5 @@ cached_sources/*
 data/
 .DS_Store
 *.jsonl
+!examples/*.jsonl
 .*/
