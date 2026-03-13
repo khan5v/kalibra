@@ -111,6 +111,15 @@ class ComparisonMetric(ABC):
         """Named scalar values exposed for ``--require`` threshold expressions."""
         return {}
 
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        """Return {field_name: description} for all threshold fields this metric exposes.
+
+        Used by ``kalibra compare --metrics`` to show available gate fields.
+        Override in subclasses. Default: empty.
+        """
+        return {}
+
 
 # ── Direction helper ──────────────────────────────────────────────────────────
 
@@ -250,6 +259,13 @@ class SuccessRateMetric(ComparisonMetric):
             warnings=warnings,
         )
 
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        return {
+            "success_rate_delta": "Change in success rate (percentage points)",
+            "success_rate": "Current success rate (%)",
+        }
+
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         if result.delta is None:
             return {}
@@ -320,6 +336,13 @@ class PerTaskMetric(ComparisonMetric):
             },
             warnings=warnings,
         )
+
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        return {
+            "regressions": "Number of regressed tasks",
+            "improvements": "Number of improved tasks",
+        }
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
@@ -403,6 +426,14 @@ class CostMetric(ComparisonMetric):
             warnings=obs_warnings,
         )
 
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        return {
+            "cost_delta_pct": "Median cost change (%)",
+            "total_cost": "Total cost of current run",
+            "avg_cost": "Average cost per trace",
+        }
+
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         fields: dict[str, float] = {}
         if result.delta is not None:
@@ -466,6 +497,14 @@ class StepsMetric(ComparisonMetric):
                 "baseline_ci_95": baseline["ci_95"], "mannwhitney": mw,
             },
         )
+
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        return {
+            "steps_delta_pct": "Median steps change (%)",
+            "avg_steps": "Average steps per trace",
+            "median_steps": "Median steps per trace",
+        }
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
@@ -552,6 +591,15 @@ class DurationMetric(ComparisonMetric):
             warnings=obs_warnings,
         )
 
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        return {
+            "duration_delta_pct": "Average duration change (%)",
+            "duration_median_delta_pct": "Median duration change (%)",
+            "duration_p95_delta_pct": "P95 duration change (%)",
+            "total_duration": "Total duration of current run (s)",
+        }
+
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
             "duration_delta_pct":        result.delta,
@@ -593,6 +641,10 @@ class ToolErrorRateMetric(ComparisonMetric):
             delta=round(delta_pp, 2), formatted=formatted,
             warnings=warnings,
         )
+
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        return {"tool_error_rate_delta": "Error rate change (percentage points)"}
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {"tool_error_rate_delta": result.delta}
@@ -645,6 +697,10 @@ class PathDistributionMetric(ComparisonMetric):
             },
             warnings=warnings,
         )
+
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        return {"path_jaccard": "Jaccard similarity of top execution paths"}
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {"path_jaccard": result.metadata["jaccard"]}
@@ -734,6 +790,14 @@ class TokenUsageMetric(ComparisonMetric):
             warnings=obs_warnings,
         )
 
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        return {
+            "token_delta_pct": "Median token usage change (%)",
+            "total_tokens": "Total tokens in current run",
+            "avg_tokens": "Average tokens per trace",
+        }
+
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         fields: dict[str, float] = {}
         if result.delta is not None:
@@ -802,6 +866,10 @@ class TokenEfficiencyMetric(ComparisonMetric):
             delta=delta, formatted=formatted,
             warnings=warnings,
         )
+
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        return {"token_efficiency_delta_pct": "Tokens-per-success change (%)"}
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         if result.delta is None:
@@ -874,6 +942,13 @@ class CostQualityMetric(ComparisonMetric):
             delta=delta, formatted=formatted,
             warnings=warnings,
         )
+
+    @classmethod
+    def threshold_field_names(cls) -> dict[str, str]:
+        return {
+            "cost_quality_delta_pct": "Cost-per-success change (%)",
+            "cost_per_success": "Current cost per successful task",
+        }
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         if result.delta is None:

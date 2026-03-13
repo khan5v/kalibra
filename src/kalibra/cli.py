@@ -19,9 +19,9 @@ def main():
 # ── compare ────────────────────────────────────────────────────────────────────
 
 @main.command()
-@click.option("--baseline", required=True,
+@click.option("--baseline", default=None,
               help="Baseline traces: file/dir path or @name from sources.yml.")
-@click.option("--current", required=True,
+@click.option("--current", default=None,
               help="Current traces: file/dir path or @name from sources.yml.")
 @click.option("--format", "out_format",
               type=click.Choice(["terminal", "markdown", "json"]),
@@ -44,10 +44,13 @@ def main():
                    "For custom keywords, use a source config with outcome.success/failure lists.")
 @click.option("--cost-attr", default=None,
               help="Override cost from this span attribute (e.g. custom.cost_usd).")
+@click.option("--metrics", "show_metrics", is_flag=True, default=False,
+              help="List all available metrics and their --require threshold fields, then exit.")
 def compare(baseline: str, current: str, out_format: str, require: tuple,
             config_path: str | None, sources_dir: str | None, output: str | None,
             refresh: bool, cache_dir: str,
-            outcome_field: str | None, cost_attr: str | None):
+            outcome_field: str | None, cost_attr: str | None,
+            show_metrics: bool):
     """Compare two trace datasets — regression detection, statistical diff.
 
     \b
@@ -68,6 +71,13 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
       kalibra compare --baseline @baseline --current @current --config /data/configs/prod.yml
       kalibra compare --baseline @baseline --current @current --config ~/my-configs/
     """
+    if show_metrics:
+        _print_metrics()
+        return
+
+    if not baseline or not current:
+        raise click.UsageError("--baseline and --current are required (unless using --metrics).")
+
     from kalibra.config import CompareConfig, load_sources
     from kalibra.report import render
 
@@ -351,6 +361,49 @@ def validate(path: str):
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
+
+
+def _print_metrics() -> None:
+    """Print all available metrics and their threshold fields."""
+    from kalibra.config import CompareConfig, resolve_metrics
+    from kalibra.metrics import DEFAULT_METRICS
+
+    config = CompareConfig.load()
+    all_metrics = resolve_metrics(config, DEFAULT_METRICS)
+
+    bar = click.style("─" * 58, dim=True)
+    dot = click.style("·", dim=True)
+
+    click.echo()
+    click.echo(f"  {click.style('Kalibra Metrics', bold=True)}")
+    click.echo(f"  {bar}")
+    click.echo()
+
+    for m in all_metrics:
+        click.echo(f"  {click.style(m.name, fg='cyan', bold=True)}")
+        click.echo(f"  {click.style(m.description, dim=True)}")
+        fields = m.threshold_field_names()
+        if fields:
+            for field_name, desc in fields.items():
+                click.echo(
+                    f"    {click.style(field_name, fg='white')}"
+                    f"  {dot * (34 - len(field_name))}  "
+                    f"{click.style(desc, dim=True)}"
+                )
+        click.echo()
+
+    click.echo(f"  {bar}")
+    click.echo()
+    click.echo(f"  {click.style('Quick:', dim=True)}  kalibra compare --require {click.style('\"success_rate_delta >= -2\"', fg='cyan')}")
+    click.echo()
+    click.echo(f"  {click.style('Config:', dim=True)} add to {click.style('config/compare.yml', fg='cyan')}:")
+    click.echo(click.style("          require:", dim=True))
+    click.echo(click.style("            - success_rate_delta >= -2", dim=True))
+    click.echo(click.style("            - cost_delta_pct <= 20", dim=True))
+    click.echo(click.style("            - regressions <= 5", dim=True))
+    click.echo()
+    click.echo(click.style("  Both combine — config gates always apply, --require adds more.", dim=True))
+    click.echo()
 
 
 def _cache_path(name: str, cache_dir: str = DEFAULT_CACHE_DIR) -> Path:
