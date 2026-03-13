@@ -229,6 +229,42 @@ ls-current:
 
 Override locations: `--config /path/to/compare.yml`, `--sources /path/to/sources/`.
 
+### Outcome and cost overrides
+
+By default, connectors detect outcome (success/failure) using platform heuristics — keyword matching on output fields, error flags, feedback scores. Cost is read from the platform's reported value.
+
+You can override both per source when the defaults don't match your setup:
+
+```yaml
+# config/sources/production.yml
+prod-baseline:
+  source: langfuse
+  project: my-agent
+  since: 7d
+  tags: [production, v1]
+
+  # Use a specific metadata field for outcome instead of keyword heuristics
+  outcome:
+    field: metadata.evaluation_result       # dot-path into trace metadata
+    success: [pass, resolved, correct]      # values that map to "success"
+    failure: [fail, timeout, incorrect]     # values that map to "failure"
+
+  # Use a different span attribute for cost
+  cost:
+    attr: custom.cost_usd                   # span attribute name
+```
+
+**Outcome override** — looks up `field` in trace metadata, matches the value (case-insensitive) against `success` and `failure` keyword lists. If the field is missing or the value doesn't match either list, the connector's default heuristic is kept. Defaults for `success`/`failure` lists are `["success"]` and `["failure", "error", "failed"]`.
+
+**Cost override** — reads cost from the specified span attribute instead of the default `agentflow.cost`. Useful when your instrumentation writes cost to a custom field.
+
+The `field` path supports several forms:
+- Bare key: `status` → `trace.metadata["status"]`
+- Metadata prefix: `metadata.langfuse.eval` → `trace.metadata["langfuse.eval"]`
+- Nested dicts: `metadata.eval.result` → `trace.metadata["eval"]["result"]`
+
+Overrides are applied after the connector fetches traces and before JSONL is written, so the saved cache reflects the overridden values.
+
 ---
 
 ## Custom metrics

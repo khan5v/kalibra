@@ -175,18 +175,41 @@ class LangSmithConnector:
         spans = [s for s in spans if s is not None]
         spans.sort(key=lambda s: s.start_time)
 
+        # ── Trace metadata: forward all run-level fields ────────────────────
+        trace_meta: dict = {
+            "source": "langsmith",
+            "name": run.name or "",
+            "project": getattr(run, "session_name", "") or "",
+            "tags": list(run.tags or []),
+            "session_id": str(getattr(run, "session_id", "") or ""),
+        }
+        # Forward extra.metadata (user-defined key-value pairs)
+        run_extra = getattr(run, "extra", None) or {}
+        run_metadata = run_extra.get("metadata", {}) if isinstance(run_extra, dict) else {}
+        if isinstance(run_metadata, dict):
+            for k, v in run_metadata.items():
+                if v is not None and k not in ("agentflow_cost", "agentflow_input_tokens",
+                                                "agentflow_output_tokens", "ls_model_name"):
+                    trace_meta[f"langsmith.{k}"] = v
+        # Forward feedback stats
+        fb = getattr(run, "feedback_stats", None)
+        if fb:
+            trace_meta["langsmith.feedback_stats"] = fb
+
         return Trace(
             trace_id=trace_id,
             spans=spans,
             outcome=outcome,
-            metadata={
-                "source": "langsmith",
-                "name": run.name or "",
-                "project": getattr(run, "session_name", "") or "",
-                "tags": list(run.tags or []),
-                "session_id": str(getattr(run, "session_id", "") or ""),
-            },
+            metadata=trace_meta,
         )
+
+    # Run attributes already mapped to first-class span properties or OTel attributes.
+    _RUN_MAPPED_ATTRS = frozenset({
+        "id", "name", "run_type", "start_time", "end_time", "error",
+        "parent_run_id", "tags", "feedback_stats", "outputs",
+        "usage_metadata", "prompt_tokens", "completion_tokens",
+        "session_name", "session_id",
+    })
 
     def _run_to_span(self, trace_id: str, run, is_root: bool = False):
         run_id = str(run.id)
@@ -205,12 +228,12 @@ class LangSmithConnector:
 
         model = None
         extra = getattr(run, "extra", None) or {}
-        invocation_params = extra.get("invocation_params", {})
+        invocation_params = extra.get("invocation_params", {}) if isinstance(extra, dict) else {}
         if invocation_params:
             model = invocation_params.get("model_name") or invocation_params.get("model")
         # Fallback: check serialized kwargs
         if not model:
-            serialized = extra.get("metadata", {})
+            serialized = extra.get("metadata", {}) if isinstance(extra, dict) else {}
             if isinstance(serialized, dict):
                 model = serialized.get("ls_model_name")
 
@@ -221,13 +244,16 @@ class LangSmithConnector:
             if parent_run_id else None
         )
 
-        attrs: dict = {"run_type": run.run_type or ""}
+        # ── Build attributes: known OTel fields first ────────────────────────
+        attrs: dict = {"langsmith.run_type": run.run_type or ""}
         if model:
             attrs[GEN_AI_MODEL] = model
         attrs[GEN_AI_INPUT_TOKENS]  = input_tokens
         attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
         # LangSmith doesn't reliably persist cost/tokens — read from extra.metadata
         metadata = extra.get("metadata", {}) if isinstance(extra, dict) else {}
+        if not isinstance(metadata, dict):
+            metadata = {}
         attrs[AF_COST] = float(metadata.get("agentflow_cost", 0.0))
         # Fall back to metadata tokens if SDK fields are empty
         if input_tokens == 0 and output_tokens == 0:
@@ -235,6 +261,30 @@ class LangSmithConnector:
             output_tokens = int(metadata.get("agentflow_output_tokens", 0))
             attrs[GEN_AI_INPUT_TOKENS] = input_tokens
             attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
+
+        # Forward invocation params (temperature, model config, etc.)
+        for k, v in invocation_params.items():
+            if k not in ("model_name", "model") and v is not None:
+                attrs[f"gen_ai.request.{k}"] = _coerce_attr_value(v)
+
+        # Forward extra.metadata as langsmith.metadata.* (skip already-consumed fields)
+        _consumed_meta = {"agentflow_cost", "agentflow_input_tokens",
+                          "agentflow_output_tokens", "ls_model_name"}
+        for k, v in metadata.items():
+            if k not in _consumed_meta and v is not None:
+                attrs[f"langsmith.metadata.{k}"] = _coerce_attr_value(v)
+
+        # Forward remaining extra fields (runtime, revision_id, etc.)
+        if isinstance(extra, dict):
+            for k, v in extra.items():
+                if k not in ("invocation_params", "metadata") and v is not None:
+                    attrs[f"langsmith.extra.{k}"] = _coerce_attr_value(v)
+
+        # Forward run-level fields not already mapped
+        for attr_name in ("inputs", "serialized", "events"):
+            val = getattr(run, attr_name, None)
+            if val is not None:
+                attrs[f"langsmith.{attr_name}"] = _coerce_attr_value(val)
 
         return make_span(
             name=name,
@@ -246,6 +296,23 @@ class LangSmithConnector:
             attributes=attrs,
             error=bool(run.error),
         )
+
+
+def _coerce_attr_value(v):
+    """Coerce a value to an OTel-compatible attribute type.
+
+    OTel attributes accept: str, int, float, bool, and sequences of those.
+    Dicts and other complex types are JSON-serialized to strings.
+    """
+    if isinstance(v, (str, int, float, bool)):
+        return v
+    if isinstance(v, (list, tuple)):
+        return [_coerce_attr_value(item) for item in v]
+    import json
+    try:
+        return json.dumps(v, default=str)
+    except (TypeError, ValueError):
+        return str(v)
 
 
 def _to_ts(dt) -> float:

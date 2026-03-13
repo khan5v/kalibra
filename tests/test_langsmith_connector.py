@@ -201,6 +201,89 @@ def test_run_to_span_root_no_parent():
     assert span.parent is None
 
 
+# ── attribute pass-through ─────────────────────────────────────────────────────
+
+def test_run_to_span_forwards_invocation_params():
+    """Model config (temperature, etc.) from invocation_params should be forwarded."""
+    run = _make_run(
+        run_id="inv-params",
+        run_type="llm",
+        extra={"invocation_params": {"model_name": "gpt-4o", "temperature": 0.5, "max_tokens": 2048}},
+    )
+    span = CONNECTOR._run_to_span("root-001", run)
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.request.temperature"] == 0.5
+    assert attrs["gen_ai.request.max_tokens"] == 2048
+
+
+def test_run_to_span_forwards_custom_metadata():
+    """User metadata from extra.metadata should be forwarded."""
+    run = _make_run(
+        run_id="meta-fwd",
+        run_type="llm",
+        extra={"metadata": {"custom_key": "custom_val", "experiment_id": "exp-7"}},
+    )
+    span = CONNECTOR._run_to_span("root-001", run)
+    attrs = dict(span.attributes)
+    assert attrs["langsmith.metadata.custom_key"] == "custom_val"
+    assert attrs["langsmith.metadata.experiment_id"] == "exp-7"
+
+
+def test_run_to_span_forwards_extra_fields():
+    """Extra fields like runtime, revision_id should be forwarded."""
+    run = _make_run(
+        run_id="extra-fwd",
+        run_type="chain",
+        extra={"runtime": {"sdk": "langchain", "version": "0.3.0"}, "revision_id": "abc123"},
+    )
+    span = CONNECTOR._run_to_span("root-001", run)
+    attrs = dict(span.attributes)
+    assert "langsmith.extra.revision_id" in attrs
+    assert attrs["langsmith.extra.revision_id"] == "abc123"
+    # runtime is a dict, should be JSON-serialized
+    assert "langsmith.extra.runtime" in attrs
+
+
+def test_run_to_span_forwards_inputs():
+    """Run inputs should be forwarded as langsmith.inputs."""
+    run = _make_run(
+        run_id="inputs-fwd",
+        run_type="llm",
+    )
+    run.inputs = {"prompt": "hello world"}
+    span = CONNECTOR._run_to_span("root-001", run)
+    attrs = dict(span.attributes)
+    assert "langsmith.inputs" in attrs
+
+
+def test_run_to_span_does_not_forward_consumed_metadata():
+    """agentflow_cost and ls_model_name should not appear in langsmith.metadata.*."""
+    run = _make_run(
+        run_id="no-dup",
+        run_type="llm",
+        extra={"metadata": {"agentflow_cost": 0.01, "ls_model_name": "gpt-4o", "keep_this": "yes"}},
+    )
+    span = CONNECTOR._run_to_span("root-001", run)
+    attrs = dict(span.attributes)
+    assert "langsmith.metadata.agentflow_cost" not in attrs
+    assert "langsmith.metadata.ls_model_name" not in attrs
+    assert attrs["langsmith.metadata.keep_this"] == "yes"
+
+
+def test_convert_forwards_trace_metadata():
+    run = _make_run(
+        run_id="meta-trace",
+        tags=["v2", "experiment"],
+        outputs={"outcome": "success"},
+        feedback_stats={"score": {"avg": 0.9}},
+        extra={"metadata": {"team": "ml-platform"}},
+    )
+    trace = CONNECTOR._convert(run, [])
+    assert trace.metadata["tags"] == ["v2", "experiment"]
+    assert trace.metadata["langsmith.team"] == "ml-platform"
+    assert trace.metadata["langsmith.feedback_stats"] == {"score": {"avg": 0.9}}
+
+
 # ── full convert ──────────────────────────────────────────────────────────────
 
 def test_convert_builds_all_spans():

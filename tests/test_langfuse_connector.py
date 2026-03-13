@@ -63,6 +63,38 @@ OBSERVATION_ERROR = {
     "statusMessage": "Tool call failed",
 }
 
+OBSERVATION_RICH = {
+    "id": "obs-rich",
+    "name": "llm-call",
+    "type": "GENERATION",
+    "startTime": "2026-01-01T10:00:01Z",
+    "endTime": "2026-01-01T10:00:05Z",
+    "level": "DEFAULT",
+    "usage": {"input": 100, "output": 50, "total": 150, "unit": "TOKENS"},
+    "calculatedTotalCost": 0.005,
+    "model": "gpt-4o",
+    "parentObservationId": None,
+    "statusMessage": None,
+    "modelParameters": {"temperature": 0.7, "max_tokens": 4096},
+    "completionStartTime": "2026-01-01T10:00:01.500Z",
+    "version": "v2.1",
+    "environment": "staging",
+    "metadata": {
+        "custom_field": "custom_value",
+        "rag_chunk_count": 5,
+        "attributes": {
+            "gen_ai.agent.name": "my-agent",
+            "custom.pipeline.step": "retrieval",
+        },
+        "resourceAttributes": {
+            "service.name": "my-service",
+            "service.version": "1.0.0",
+        },
+    },
+    "input": {"prompt": "What is the weather?"},
+    "output": {"completion": "It is sunny."},
+}
+
 
 def _make_httpx_response(json_data: dict, status_code: int = 200) -> MagicMock:
     resp = MagicMock()
@@ -150,6 +182,103 @@ def test_convert_sorts_spans_by_start_time():
     obs_early = {**OBSERVATION, "id": "obs-early", "startTime": "2026-01-01T10:00:00Z"}
     trace = CONNECTOR._convert(RAW_TRACE, [obs_late, obs_early])
     assert trace.spans[0].start_time < trace.spans[1].start_time
+
+
+# ── attribute pass-through ─────────────────────────────────────────────────────
+
+def test_obs_to_span_forwards_model_parameters():
+    span = CONNECTOR._obs_to_span("trace-001", OBSERVATION_RICH)
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.request.temperature"] == 0.7
+    assert attrs["gen_ai.request.max_tokens"] == 4096
+
+
+def test_obs_to_span_forwards_completion_start_time():
+    span = CONNECTOR._obs_to_span("trace-001", OBSERVATION_RICH)
+    assert span.attributes["langfuse.completion_start_time"] == "2026-01-01T10:00:01.500Z"
+
+
+def test_obs_to_span_forwards_version_and_environment():
+    span = CONNECTOR._obs_to_span("trace-001", OBSERVATION_RICH)
+    assert span.attributes["langfuse.version"] == "v2.1"
+    assert span.attributes["langfuse.environment"] == "staging"
+
+
+def test_obs_to_span_forwards_custom_metadata():
+    span = CONNECTOR._obs_to_span("trace-001", OBSERVATION_RICH)
+    attrs = dict(span.attributes)
+    assert attrs["langfuse.metadata.custom_field"] == "custom_value"
+    assert attrs["langfuse.metadata.rag_chunk_count"] == 5
+
+
+def test_obs_to_span_hoists_otel_attributes_from_metadata():
+    """OTel attributes stored in metadata.attributes should be top-level span attrs."""
+    span = CONNECTOR._obs_to_span("trace-001", OBSERVATION_RICH)
+    attrs = dict(span.attributes)
+    assert attrs["gen_ai.agent.name"] == "my-agent"
+    assert attrs["custom.pipeline.step"] == "retrieval"
+
+
+def test_obs_to_span_hoists_resource_attributes():
+    span = CONNECTOR._obs_to_span("trace-001", OBSERVATION_RICH)
+    attrs = dict(span.attributes)
+    assert attrs["resource.service.name"] == "my-service"
+    assert attrs["resource.service.version"] == "1.0.0"
+
+
+def test_obs_to_span_forwards_extra_usage_fields():
+    span = CONNECTOR._obs_to_span("trace-001", OBSERVATION_RICH)
+    attrs = dict(span.attributes)
+    assert attrs["langfuse.usage.total"] == 150
+    assert attrs["langfuse.usage.unit"] == "TOKENS"
+
+
+def test_obs_to_span_forwards_input_output():
+    """Input and output dicts should be forwarded as langfuse.* attributes."""
+    span = CONNECTOR._obs_to_span("trace-001", OBSERVATION_RICH)
+    attrs = dict(span.attributes)
+    # Dicts get JSON-serialized by _coerce_attr_value
+    assert "langfuse.input" in attrs
+    assert "langfuse.output" in attrs
+
+
+def test_obs_to_span_does_not_duplicate_known_fields():
+    """Fields already mapped (model, tokens, cost) should not appear twice."""
+    span = CONNECTOR._obs_to_span("trace-001", OBSERVATION_RICH)
+    attrs = dict(span.attributes)
+    # gen_ai.request.model is set from obs["model"], not duplicated
+    assert attrs["gen_ai.request.model"] == "gpt-4o"
+    # Should not have langfuse.model or langfuse.usage.input
+    assert "langfuse.model" not in attrs
+    assert "langfuse.usage.input" not in attrs
+
+
+def test_convert_forwards_trace_metadata():
+    raw = {
+        **RAW_TRACE,
+        "tags": ["v2", "experiment"],
+        "release": "2026-03-01",
+        "version": "1.2.3",
+        "environment": "production",
+        "metadata": {"team": "ml-platform", "experiment_id": "exp-42"},
+    }
+    trace = CONNECTOR._convert(raw, [])
+    assert trace.metadata["tags"] == ["v2", "experiment"]
+    assert trace.metadata["release"] == "2026-03-01"
+    assert trace.metadata["version"] == "1.2.3"
+    assert trace.metadata["environment"] == "production"
+    assert trace.metadata["langfuse.team"] == "ml-platform"
+    assert trace.metadata["langfuse.experiment_id"] == "exp-42"
+
+
+def test_obs_minimal_has_no_extra_attrs():
+    """Basic observation without extra fields should not gain spurious attributes."""
+    span = CONNECTOR._obs_to_span("trace-001", OBSERVATION)
+    attrs = dict(span.attributes)
+    # Should have the core set and nothing more
+    assert attrs["langfuse.type"] == "SPAN"
+    assert attrs["gen_ai.request.model"] == "gpt-4o"
+    assert "langfuse.metadata" not in str(list(attrs.keys()))
 
 
 # ── HTTP layer: pagination and rate limiting ───────────────────────────────────

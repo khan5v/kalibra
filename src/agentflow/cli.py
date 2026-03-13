@@ -176,7 +176,8 @@ def pull(name: str | None, source: str | None, project: str | None,
         effective_tags = list(tags) or src.tags
         effective_session = session or src.session
         _do_pull(src.source, src.project, src.since, src.limit, dest,
-                 tags=effective_tags, session_id=effective_session)
+                 tags=effective_tags, session_id=effective_session,
+                 source_config=src)
     else:
         if not source or not project:
             raise click.UsageError(
@@ -226,14 +227,16 @@ def _resolve_source(arg: str, sources: dict, refresh: bool,
         return str(dest)
 
     _do_pull(src.source, src.project, src.since, src.limit, str(dest),
-             tags=src.tags, session_id=src.session)
+             tags=src.tags, session_id=src.session, source_config=src)
     return str(dest)
 
 
 def _do_pull(source: str, project: str, since: str, limit: int, output: str,
-             tags: list[str] | None = None, session_id: str | None = None) -> None:
+             tags: list[str] | None = None, session_id: str | None = None,
+             source_config=None) -> None:
     from agentflow.connectors import get_connector
     from agentflow.connectors.langfuse import parse_since
+    from agentflow.converters.base import apply_overrides
     from agentflow.converters.generic import save_jsonl
 
     extra = ""
@@ -256,6 +259,10 @@ def _do_pull(source: str, project: str, since: str, limit: int, output: str,
     if session_id:
         fetch_kwargs["session_id"] = session_id
     traces = connector.fetch(**fetch_kwargs)
+
+    # Apply outcome/cost overrides from source config
+    apply_overrides(traces, source_config)
+
     click.echo(f"Fetched {len(traces):,} traces.")
     save_jsonl(traces, output)
     click.echo(f"Saved to {output}")

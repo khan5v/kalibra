@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
 # Auto-discovered in cwd if present (no config entry needed).
@@ -12,6 +12,57 @@ _AUTO_PLUGIN_FILE = "agentflow_metrics.py"
 _CONFIG_FILE = "config/compare.yml"
 _SOURCES_DIR = "config/sources"
 _CACHE_DIR = "cached_sources"
+
+
+@dataclass
+class OutcomeConfig:
+    """Override outcome detection for a source.
+
+    Looks up ``field`` in trace metadata and matches the value against
+    ``success`` / ``failure`` keyword lists.  If the field is missing or
+    the value doesn't match either list, the connector's default heuristic
+    is kept.
+
+    Example YAML::
+
+        outcome:
+          field: metadata.evaluation_result
+          success: [pass, resolved]
+          failure: [fail, timeout]
+    """
+
+    field: str | None = None
+    success: list[str] = dc_field(default_factory=lambda: ["success"])
+    failure: list[str] = dc_field(default_factory=lambda: ["failure", "error", "failed"])
+
+    @classmethod
+    def from_dict(cls, data) -> OutcomeConfig | None:
+        if data is None or not isinstance(data, dict):
+            return None
+        return cls(
+            field=data.get("field"),
+            success=data.get("success", ["success"]),
+            failure=data.get("failure", ["failure", "error", "failed"]),
+        )
+
+
+@dataclass
+class CostConfig:
+    """Override which span attribute is used for cost.
+
+    Example YAML::
+
+        cost:
+          attr: custom.cost_usd
+    """
+
+    attr: str | None = None
+
+    @classmethod
+    def from_dict(cls, data) -> CostConfig | None:
+        if data is None or not isinstance(data, dict):
+            return None
+        return cls(attr=data.get("attr"))
 
 
 @dataclass
@@ -23,14 +74,18 @@ class SourceConfig:
         project: Project name or ID in the trace store.
         since:   Time window to fetch — e.g. ``"7d"``, ``"24h"``, ``"2026-01-01"``.
         limit:   Max traces to fetch (default 5000).
+        outcome: Override outcome detection (see ``OutcomeConfig``).
+        cost:    Override cost computation (see ``CostConfig``).
     """
 
     source: str
     project: str
     since: str = "7d"
     limit: int = 5000
-    tags: list[str] = field(default_factory=list)
+    tags: list[str] = dc_field(default_factory=list)
     session: str | None = None
+    outcome: OutcomeConfig | None = None
+    cost: CostConfig | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "SourceConfig":
@@ -44,6 +99,8 @@ class SourceConfig:
             limit=int(data.get("limit", 5000)),
             tags=[str(t) for t in raw_tags],
             session=data.get("session") or None,
+            outcome=OutcomeConfig.from_dict(data.get("outcome")),
+            cost=CostConfig.from_dict(data.get("cost")),
         )
 
 
@@ -87,8 +144,8 @@ class CompareConfig:
     """
 
     metrics: list[str] | None = None
-    require: list[str] = field(default_factory=list)
-    noise_thresholds: dict[str, float] = field(default_factory=dict)
+    require: list[str] = dc_field(default_factory=list)
+    noise_thresholds: dict[str, float] = dc_field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: dict) -> "CompareConfig":

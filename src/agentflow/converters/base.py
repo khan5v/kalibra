@@ -139,6 +139,96 @@ class Trace:
         return [s for s in self.spans if s.parent and s.parent.span_id == span_id_int]
 
 
+# ── Post-processing overrides ────────────────────────────────────────────────
+
+def apply_overrides(traces: list[Trace], source_config) -> list[Trace]:
+    """Apply outcome and cost overrides from a SourceConfig.
+
+    Mutates traces in place and returns the same list.
+    """
+    if source_config is None:
+        return traces
+    if source_config.outcome is not None:
+        _apply_outcome_override(traces, source_config.outcome)
+    if source_config.cost is not None:
+        _apply_cost_override(traces, source_config.cost)
+    return traces
+
+
+def _apply_outcome_override(traces: list[Trace], cfg) -> None:
+    """Override outcome by matching a metadata field against keyword lists."""
+    if not cfg.field:
+        return
+    for trace in traces:
+        val = _resolve_field(trace, cfg.field)
+        if val is None:
+            continue
+        val_str = str(val).lower().strip()
+        if any(s.lower() == val_str for s in cfg.success):
+            trace.outcome = "success"
+        elif any(s.lower() == val_str for s in cfg.failure):
+            trace.outcome = "failure"
+
+
+def _apply_cost_override(traces: list[Trace], cfg) -> None:
+    """Read cost from an alternate span attribute instead of agentflow.cost."""
+    if not cfg.attr:
+        return
+    for trace in traces:
+        new_spans = []
+        for s in trace.spans:
+            attrs = dict(s.attributes or {})
+            cost = attrs.get(cfg.attr, 0.0)
+            try:
+                attrs[AF_COST] = float(cost)
+            except (TypeError, ValueError):
+                attrs[AF_COST] = 0.0
+            new_spans.append(make_span(
+                name=s.name,
+                trace_id=format(s.context.trace_id, "032x"),
+                span_id=format(s.context.span_id, "016x"),
+                parent_span_id=format(s.parent.span_id, "016x") if s.parent else None,
+                start_ns=s.start_time,
+                end_ns=s.end_time,
+                attributes=attrs,
+                error=s.status.status_code == StatusCode.ERROR,
+            ))
+        trace.spans = new_spans
+
+
+def _resolve_field(trace: Trace, field_path: str):
+    """Resolve a dot-path field on a Trace.
+
+    Supported paths:
+      ``metadata.foo``        → trace.metadata["foo"]
+      ``metadata.langfuse.x`` → trace.metadata["langfuse.x"]
+      ``outcome``             → trace.outcome
+      ``trace_id``            → trace.trace_id
+    """
+    if field_path == "outcome":
+        return trace.outcome
+    if field_path == "trace_id":
+        return trace.trace_id
+
+    if field_path.startswith("metadata."):
+        key = field_path[len("metadata."):]
+        # Try exact key first (e.g., "langfuse.score" as a single key)
+        if key in trace.metadata:
+            return trace.metadata[key]
+        # Try nested dot-path (e.g., metadata.foo.bar → metadata["foo"]["bar"])
+        parts = key.split(".")
+        val = trace.metadata
+        for part in parts:
+            if isinstance(val, dict) and part in val:
+                val = val[part]
+            else:
+                return None
+        return val
+
+    # Bare key: look in metadata directly
+    return trace.metadata.get(field_path)
+
+
 # ── ID conversion helpers ─────────────────────────────────────────────────────
 
 def _to_trace_id_int(s: str) -> int:

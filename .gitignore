@@ -11,6 +11,10 @@ build/
 .pytest_cache/
 *.html
 context/
+docs/
+landing/
 cached_sources/*
 data/
+.DS_Store
 *.jsonl
+.*/

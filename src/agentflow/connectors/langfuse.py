@@ -181,17 +181,43 @@ class LangfuseConnector:
                 end_ns=t0_ns,
             )]
 
+        # ── Trace metadata: forward all trace-level fields ─────────────────
+        trace_meta: dict = {
+            "source": "langfuse",
+            "name": raw.get("name", ""),
+            "session_id": raw.get("sessionId", ""),
+            "user_id": raw.get("userId", ""),
+        }
+        if raw.get("tags"):
+            trace_meta["tags"] = raw["tags"]
+        if raw.get("release"):
+            trace_meta["release"] = raw["release"]
+        if raw.get("version"):
+            trace_meta["version"] = raw["version"]
+        if raw.get("environment"):
+            trace_meta["environment"] = raw["environment"]
+        # Forward trace-level metadata dict (user-defined key-value pairs)
+        raw_meta = raw.get("metadata")
+        if isinstance(raw_meta, dict):
+            for k, v in raw_meta.items():
+                if v is not None:
+                    trace_meta[f"langfuse.{k}"] = v
+
         return Trace(
             trace_id=trace_id,
             spans=spans,
             outcome=outcome,
-            metadata={
-                "source": "langfuse",
-                "name": raw.get("name", ""),
-                "session_id": raw.get("sessionId", ""),
-                "user_id": raw.get("userId", ""),
-            },
+            metadata=trace_meta,
         )
+
+    # Fields that are already mapped to first-class span properties or OTel attributes.
+    # Everything else from the observation dict is forwarded as langfuse.* attributes.
+    _OBS_MAPPED_FIELDS = frozenset({
+        "id", "name", "type", "startTime", "endTime", "level", "statusMessage",
+        "parentObservationId", "usage", "calculatedTotalCost", "model",
+        # These are Langfuse internals, not useful as span attributes
+        "traceId", "projectId", "createdAt", "updatedAt",
+    })
 
     def _obs_to_span(self, trace_id: str, obs: dict):
         obs_id = obs.get("id", "")
@@ -221,12 +247,65 @@ class LangfuseConnector:
             if parent_obs_id else None
         )
 
-        attrs: dict = {"langfuse_type": obs.get("type", "")}
+        # ── Build attributes: known OTel fields first ────────────────────────
+        attrs: dict = {"langfuse.type": obs.get("type", "")}
         if model:
             attrs[GEN_AI_MODEL] = model
         attrs[GEN_AI_INPUT_TOKENS]  = input_tokens
         attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
         attrs[AF_COST]              = cost
+
+        # Forward unmapped usage fields (e.g. total, unit, totalCost)
+        for k, v in usage.items():
+            if k not in ("input", "output") and v is not None:
+                attrs[f"langfuse.usage.{k}"] = v
+
+        # Forward model parameters (temperature, max_tokens, etc.)
+        model_params = obs.get("modelParameters")
+        if isinstance(model_params, dict):
+            for k, v in model_params.items():
+                if v is not None:
+                    attrs[f"gen_ai.request.{k}"] = v
+
+        # Forward completionStartTime as TTFT
+        completion_start = obs.get("completionStartTime")
+        if completion_start:
+            attrs["langfuse.completion_start_time"] = completion_start
+
+        # Forward observation version and environment
+        if obs.get("version"):
+            attrs["langfuse.version"] = obs["version"]
+        if obs.get("environment"):
+            attrs["langfuse.environment"] = obs["environment"]
+
+        # ── Pass-through: forward all remaining fields as langfuse.* ─────────
+        # This captures metadata, input, output, and any new fields Langfuse adds.
+        obs_metadata = obs.get("metadata")
+        if isinstance(obs_metadata, dict):
+            # If this observation was originally OTel, unmapped attributes live
+            # in metadata.attributes — hoist them to top-level span attributes.
+            otel_attrs = obs_metadata.get("attributes")
+            if isinstance(otel_attrs, dict):
+                for k, v in otel_attrs.items():
+                    if v is not None and k not in attrs:
+                        attrs[k] = _coerce_attr_value(v)
+            otel_resource = obs_metadata.get("resourceAttributes")
+            if isinstance(otel_resource, dict):
+                for k, v in otel_resource.items():
+                    if v is not None:
+                        attrs[f"resource.{k}"] = _coerce_attr_value(v)
+            # Remaining metadata fields (skip the ones we already hoisted)
+            for k, v in obs_metadata.items():
+                if k in ("attributes", "resourceAttributes"):
+                    continue
+                if v is not None:
+                    attrs[f"langfuse.metadata.{k}"] = _coerce_attr_value(v)
+
+        # Forward any other observation fields not in the mapped set
+        for k, v in obs.items():
+            if k not in self._OBS_MAPPED_FIELDS and k not in ("metadata", "modelParameters",
+                    "completionStartTime", "version", "environment") and v is not None:
+                attrs[f"langfuse.{k}"] = _coerce_attr_value(v)
 
         return make_span(
             name=name,
@@ -252,6 +331,25 @@ def _parse_ts(ts_str: str | None) -> float:
         except ValueError:
             continue
     return time.time()
+
+
+def _coerce_attr_value(v):
+    """Coerce a value to an OTel-compatible attribute type.
+
+    OTel attributes accept: str, int, float, bool, and sequences of those.
+    Dicts and other complex types are JSON-serialized to strings.
+    """
+    if isinstance(v, (str, int, float, bool)):
+        return v
+    if isinstance(v, (list, tuple)):
+        # OTel sequences must be homogeneous — coerce elements
+        return [_coerce_attr_value(item) for item in v]
+    # Dicts, nested objects → JSON string
+    import json
+    try:
+        return json.dumps(v, default=str)
+    except (TypeError, ValueError):
+        return str(v)
 
 
 def parse_since(since_str: str) -> datetime:
