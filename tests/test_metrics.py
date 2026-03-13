@@ -11,17 +11,17 @@ Trace taxonomy used in these tests:
 Each trace is designed so that exact expected values are easy to reason about.
 """
 
-from agentflow.collection import TraceCollection
-from agentflow.compare import compare_collections
-from agentflow.config import CompareConfig
-from agentflow.converters.base import (
+from kalibra.collection import TraceCollection
+from kalibra.compare import compare_collections
+from kalibra.config import CompareConfig
+from kalibra.converters.base import (
     AF_COST,
     GEN_AI_INPUT_TOKENS,
     GEN_AI_OUTPUT_TOKENS,
     Trace,
     make_span,
 )
-from agentflow.metrics import (
+from kalibra.metrics import (
     CostMetric,
     CostQualityMetric,
     Direction,

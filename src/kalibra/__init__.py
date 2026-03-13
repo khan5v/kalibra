@@ -1,16 +1,16 @@
-"""AgentFlow — agent evaluation and regression detection.
+"""Kalibra — agent evaluation and regression detection.
 
 Programmatic API::
 
-    import agentflow
+    import kalibra
 
     # From files (same paths the CLI accepts)
-    result = agentflow.compare("baseline.jsonl", "current.jsonl")
+    result = kalibra.compare("baseline.jsonl", "current.jsonl")
 
     # From in-memory collections (no files needed)
-    baseline = agentflow.TraceCollection.from_traces(my_traces, source="v1")
-    current  = agentflow.TraceCollection.from_traces(new_traces, source="v2")
-    result   = agentflow.compare_collections(baseline, current)
+    baseline = kalibra.TraceCollection.from_traces(my_traces, source="v1")
+    current  = kalibra.TraceCollection.from_traces(new_traces, source="v2")
+    result   = kalibra.compare_collections(baseline, current)
 
     # Inspect results generically — works for any metric configuration
     for name, metric in result.metrics.items():
@@ -28,12 +28,12 @@ Programmatic API::
 
 __version__ = "0.1.0"
 
-from agentflow.collection import TraceCollection
-from agentflow.compare import CompareResult, ComparisonResult, ValidationResult, Gate, compare, compare_collections
-from agentflow.config import CompareConfig
-from agentflow.converters.base import Trace, make_span
+from kalibra.collection import TraceCollection
+from kalibra.compare import CompareResult, ComparisonResult, ValidationResult, Gate, compare, compare_collections
+from kalibra.config import CompareConfig
+from kalibra.converters.base import Trace, make_span
 from opentelemetry.sdk.trace import ReadableSpan
-from agentflow.metrics import (
+from kalibra.metrics import (
     ComparisonMetric, CostQualityMetric, Direction, Observation, MetricResult,
     TokenEfficiencyMetric, TokenUsageMetric,
 )

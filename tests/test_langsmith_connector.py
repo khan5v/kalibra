@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentflow.connectors.langsmith import LangSmithConnector, _to_ts
-from agentflow.converters.base import span_cost, span_input_tokens, span_is_error, span_model, span_output_tokens
+from kalibra.connectors.langsmith import LangSmithConnector, _to_ts
+from kalibra.converters.base import span_cost, span_input_tokens, span_is_error, span_model, span_output_tokens
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ def test_run_to_span_llm():
     assert span_input_tokens(span) == 500
     assert span_output_tokens(span) == 200
     assert span_model(span) == "gpt-4o"
-    assert span_cost(span) == 0.0  # no agentflow_cost in metadata
+    assert span_cost(span) == 0.0  # no kalibra_cost in metadata
     assert not span_is_error(span)
 
 
@@ -181,11 +181,11 @@ def test_run_to_span_model_from_ls_model_name():
 
 
 def test_run_to_span_cost_from_metadata():
-    """Cost is read from extra.metadata.agentflow_cost when present."""
+    """Cost is read from extra.metadata.kalibra_cost when present."""
     run = _make_run(
         run_id="cost-run",
         run_type="llm",
-        extra={"metadata": {"agentflow_cost": 0.0042}},
+        extra={"metadata": {"kalibra_cost": 0.0042}},
     )
     span = CONNECTOR._run_to_span("root-001", run)
     assert span_cost(span) == pytest.approx(0.0042)
@@ -257,15 +257,15 @@ def test_run_to_span_forwards_inputs():
 
 
 def test_run_to_span_does_not_forward_consumed_metadata():
-    """agentflow_cost and ls_model_name should not appear in langsmith.metadata.*."""
+    """kalibra_cost and ls_model_name should not appear in langsmith.metadata.*."""
     run = _make_run(
         run_id="no-dup",
         run_type="llm",
-        extra={"metadata": {"agentflow_cost": 0.01, "ls_model_name": "gpt-4o", "keep_this": "yes"}},
+        extra={"metadata": {"kalibra_cost": 0.01, "ls_model_name": "gpt-4o", "keep_this": "yes"}},
     )
     span = CONNECTOR._run_to_span("root-001", run)
     attrs = dict(span.attributes)
-    assert "langsmith.metadata.agentflow_cost" not in attrs
+    assert "langsmith.metadata.kalibra_cost" not in attrs
     assert "langsmith.metadata.ls_model_name" not in attrs
     assert attrs["langsmith.metadata.keep_this"] == "yes"
 
@@ -301,9 +301,9 @@ def test_convert_sorts_by_start_time():
 
 
 def test_convert_metadata_includes_tags():
-    run = _make_run(run_id="tagged", tags=["agentflow", "baseline"], outputs={"outcome": "success"})
+    run = _make_run(run_id="tagged", tags=["kalibra", "baseline"], outputs={"outcome": "success"})
     trace = CONNECTOR._convert(run, [])
-    assert trace.metadata["tags"] == ["agentflow", "baseline"]
+    assert trace.metadata["tags"] == ["kalibra", "baseline"]
     assert trace.metadata["source"] == "langsmith"
 
 
@@ -314,8 +314,8 @@ def test_build_filter_empty():
 
 
 def test_build_filter_tags_only():
-    f = CONNECTOR._build_filter(tags=["agentflow", "baseline"])
-    assert 'has(tags, "agentflow")' in f
+    f = CONNECTOR._build_filter(tags=["kalibra", "baseline"])
+    assert 'has(tags, "kalibra")' in f
     assert 'has(tags, "baseline")' in f
     assert f.startswith("and(")
 
@@ -384,13 +384,13 @@ def test_fetch_passes_filter_for_tags():
     with patch.object(CONNECTOR, "_make_client", return_value=mock_client):
         CONNECTOR.fetch(
             project_name="test",
-            tags=["agentflow", "baseline"],
+            tags=["kalibra", "baseline"],
             limit=10,
             progress=False,
         )
 
     call_kwargs = mock_client.list_runs.call_args[1]
-    assert 'has(tags, "agentflow")' in call_kwargs["filter"]
+    assert 'has(tags, "kalibra")' in call_kwargs["filter"]
     assert 'has(tags, "baseline")' in call_kwargs["filter"]
 
 

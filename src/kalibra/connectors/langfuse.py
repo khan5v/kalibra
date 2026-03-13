@@ -9,7 +9,7 @@ from typing import Generator
 
 import httpx
 
-from agentflow.converters.base import (
+from kalibra.converters.base import (
     AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_MODEL, GEN_AI_OUTPUT_TOKENS,
     Trace, make_span,
 )
@@ -37,7 +37,7 @@ class LangfuseConnector:
         tags: list[str] | None = None,
         session_id: str | None = None,
     ) -> list[Trace]:
-        """Fetch traces from Langfuse and convert to agentflow Trace objects."""
+        """Fetch traces from Langfuse and convert to kalibra Trace objects."""
         since = since or (datetime.now(timezone.utc) - timedelta(days=7))
         since_str = since.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -149,7 +149,7 @@ class LangfuseConnector:
         return data.get("observations", [])
 
     def _convert(self, raw: dict, observations: list[dict]) -> Trace | None:
-        """Convert Langfuse trace + observations → agentflow Trace."""
+        """Convert Langfuse trace + observations → kalibra Trace."""
         trace_id = raw["id"]
         outcome = None
         if raw.get("output"):
@@ -229,7 +229,7 @@ class LangfuseConnector:
         usage = obs.get("usage") or {}
         input_tokens = usage.get("input", 0) or 0
         output_tokens = usage.get("output", 0) or 0
-        cost = obs.get("calculatedTotalCost") or 0.0
+        cost = obs.get("calculatedTotalCost") or usage.get("totalCost") or 0.0
         model = obs.get("model") or None
 
         # Error detection

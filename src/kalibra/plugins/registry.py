@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from agentflow.converters.base import Trace
+from kalibra.converters.base import Trace
 
 NodeMetricFn = Callable[[str, list[Trace]], float]
 
@@ -29,7 +29,7 @@ class Registry:
 
     Example — custom registry in tests::
 
-        from agentflow.plugins.registry import Registry
+        from kalibra.plugins.registry import Registry
         reg = Registry()
 
         @reg.register("my_metric", "Does something")

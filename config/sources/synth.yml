@@ -1,11 +1,11 @@
-# AgentFlow source registry — named pull configurations.
+# Kalibra source registry — named pull configurations.
 #
 # All *.yml files in config/sources/ are merged automatically.
 # Each top-level key is a source name, referenced as @name in CLI commands:
 #
-#   agentflow pull @current
-#   agentflow compare --baseline @baseline --current @current
-#   agentflow pull @current --refresh          # force re-pull, bypass cache
+#   kalibra pull @current
+#   kalibra compare --baseline @baseline --current @current
+#   kalibra pull @current --refresh          # force re-pull, bypass cache
 #
 # Fields per source:
 #   source:   langfuse | langsmith
@@ -24,13 +24,13 @@
 baseline:
   source: langfuse
   project: synth
-  since: 7d
+  since: 1d
   limit: 500
-  tags: [agentflow, baseline]
+  tags: [kalibra, baseline]
 
 current:
   source: langfuse
   project: synth
-  since: 7d
+  since: 1d
   limit: 500
-  tags: [agentflow, current]
+  tags: [kalibra, current]

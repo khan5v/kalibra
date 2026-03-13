@@ -1,7 +1,7 @@
 # Model comparison — evaluate cost vs. quality tradeoffs between models.
 #
 # Usage:
-#   agentflow compare --baseline @gpt4-run --current @gpt4o-run \
+#   kalibra compare --baseline @gpt4-run --current @gpt4o-run \
 #     --config config/examples/model-comparison.yml
 #
 # Focuses on cost-effectiveness metrics. No hard gates — use this

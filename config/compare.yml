@@ -1,4 +1,4 @@
-# AgentFlow — metrics and quality gates.
+# Kalibra — metrics and quality gates.
 #
 # Omit `metrics` entirely to run all built-in metrics.
 # Omit `require` (or leave empty) for no quality gates.

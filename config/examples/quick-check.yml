@@ -1,7 +1,7 @@
 # Quick check — fast, lightweight comparison for local development.
 #
 # Usage:
-#   agentflow compare --baseline @baseline --current @current \
+#   kalibra compare --baseline @baseline --current @current \
 #     --config config/examples/quick-check.yml
 #
 # Runs only the cheapest metrics (no path analysis, no per-task matching).

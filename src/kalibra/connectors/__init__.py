@@ -8,7 +8,7 @@ def get_connector(source: str):
     import os
 
     if source == "langfuse":
-        from agentflow.connectors.langfuse import LangfuseConnector
+        from kalibra.connectors.langfuse import LangfuseConnector
         host = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
         pk = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
         sk = os.environ.get("LANGFUSE_SECRET_KEY", "")
@@ -19,7 +19,7 @@ def get_connector(source: str):
         return LangfuseConnector(host=host, public_key=pk, secret_key=sk)
 
     if source == "langsmith":
-        from agentflow.connectors.langsmith import LangSmithConnector
+        from kalibra.connectors.langsmith import LangSmithConnector
         api_key = os.environ.get("LANGSMITH_API_KEY", "")
         if not api_key:
             raise RuntimeError("Set LANGSMITH_API_KEY environment variable.")

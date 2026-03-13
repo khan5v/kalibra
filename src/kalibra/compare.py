@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from agentflow.collection import TraceCollection
-from agentflow.config import CompareConfig, resolve_metrics
-from agentflow.metrics import ComparisonMetric, DEFAULT_METRICS, Direction, Observation
+from kalibra.collection import TraceCollection
+from kalibra.config import CompareConfig, resolve_metrics
+from kalibra.metrics import ComparisonMetric, DEFAULT_METRICS, Direction, Observation
 
 
 # ── Result types ──────────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ def compare(
         metrics:       Explicit metric list. Overrides config and DEFAULT_METRICS.
         require:       Threshold expressions appended to any defined in ``config``.
         config:        Metric selection, thresholds, and plugins. Auto-loaded from
-                       ``agentflow.yml`` in cwd if omitted.
+                       ``kalibra.yml`` in cwd if omitted.
 
     Returns:
         A ``CompareResult`` containing all metric results and threshold outcomes.
@@ -112,14 +112,14 @@ def compare_collections(
         metrics:   Explicit metric list. Overrides config and DEFAULT_METRICS.
         require:   Threshold expressions appended to any defined in ``config``.
         config:    Metric selection, thresholds, and plugins. Pass an explicit
-                   ``CompareConfig`` to avoid auto-loading ``agentflow.yml``.
+                   ``CompareConfig`` to avoid auto-loading ``kalibra.yml``.
 
     Returns:
         A ``CompareResult`` containing all metric results and threshold outcomes.
 
     Example::
 
-        from agentflow import compare_collections, CompareConfig, TraceCollection
+        from kalibra import compare_collections, CompareConfig, TraceCollection
 
         baseline = TraceCollection.from_traces(run_agent(baseline_prompt), source="v1")
         current  = TraceCollection.from_traces(run_agent(new_prompt),      source="v2")

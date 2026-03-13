@@ -1,9 +1,9 @@
 """Tests — core data structures, collection, metrics, comparison."""
 
-from agentflow.collection import TraceCollection
-from agentflow.compare import compare, CompareResult
-from agentflow.converters.base import AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_OUTPUT_TOKENS, Trace, make_span
-from agentflow.metrics import (
+from kalibra.collection import TraceCollection
+from kalibra.compare import compare, CompareResult
+from kalibra.converters.base import AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_OUTPUT_TOKENS, Trace, make_span
+from kalibra.metrics import (
     CostMetric,
     DEFAULT_METRICS,
     Direction,
@@ -259,7 +259,7 @@ def test_path_jaccard_disjoint():
 # ── Full compare() integration ────────────────────────────────────────────────
 
 def test_compare_same_data(tmp_path):
-    from agentflow.converters.generic import save_jsonl
+    from kalibra.converters.generic import save_jsonl
     traces = [
         _trace("t1__m__0", ["bash", "edit", "submit"], "success"),
         _trace("t2__m__1", ["bash", "edit", "submit"], "failure"),
@@ -278,7 +278,7 @@ def test_compare_same_data(tmp_path):
 
 
 def test_compare_threshold_pass(tmp_path):
-    from agentflow.converters.generic import save_jsonl
+    from kalibra.converters.generic import save_jsonl
     traces = [_trace("t1__m__0", ["a"], "success")]
     f = str(tmp_path / "traces.jsonl")
     save_jsonl(traces, f)
@@ -290,7 +290,7 @@ def test_compare_threshold_pass(tmp_path):
 
 
 def test_compare_threshold_fail(tmp_path):
-    from agentflow.converters.generic import save_jsonl
+    from kalibra.converters.generic import save_jsonl
     traces = [_trace("t1__m__0", ["a"], "success")]
     f = str(tmp_path / "traces.jsonl")
     save_jsonl(traces, f)
@@ -301,7 +301,7 @@ def test_compare_threshold_fail(tmp_path):
 
 
 def test_all_default_metrics_present(tmp_path):
-    from agentflow.converters.generic import save_jsonl
+    from kalibra.converters.generic import save_jsonl
     traces = [_trace("t1__m__0", ["a"], "success")]
     f = str(tmp_path / "traces.jsonl")
     save_jsonl(traces, f)
@@ -348,10 +348,10 @@ def test_per_task_direction_degradation():
 
 def test_rollup_direction_inconclusive(tmp_path):
     """When some metrics improve and some degrade the roll-up is INCONCLUSIVE."""
-    from agentflow.converters.generic import save_jsonl
-    from agentflow.compare import compare_collections
-    from agentflow.collection import TraceCollection
-    from agentflow.metrics import SuccessRateMetric, CostMetric
+    from kalibra.converters.generic import save_jsonl
+    from kalibra.compare import compare_collections
+    from kalibra.collection import TraceCollection
+    from kalibra.metrics import SuccessRateMetric, CostMetric
 
     # success improves (upgrade), cost stays same → UPGRADE
     # We just test that the roll-up is not SAME when there's a real upgrade

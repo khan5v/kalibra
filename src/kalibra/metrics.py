@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, ClassVar
 
-from agentflow.collection import TraceCollection
-from agentflow.converters.base import span_input_tokens, span_is_error, span_output_tokens
+from kalibra.collection import TraceCollection
+from kalibra.converters.base import span_input_tokens, span_is_error, span_output_tokens
 
 # Minimum sample sizes for reliable metric computation.
 _MIN_N = 30       # below this, any metric is suspect
@@ -163,9 +163,17 @@ class SuccessRateMetric(ComparisonMetric):
             current["with_outcome"],  current["successes"],
         )
         significant = pval < 0.05
-        sig = f"✓ significant (p={pval:.3f})" if significant else f"~ not significant (p={pval:.3f})"
         sign = "+" if delta_pp >= 0 else ""
-        formatted = f"{b_rate:.1%} → {c_rate:.1%}  {sign}{delta_pp:.1f} pp  {sig}"
+        formatted = f"{b_rate:.1%} → {c_rate:.1%}  {sign}{delta_pp:.1f} pp"
+
+        details: list[str] = []
+        if significant:
+            details.append(f"p={pval:.3f} — statistically significant")
+        else:
+            details.append(f"p={pval:.3f} — not statistically significant")
+        details.append(
+            f"n={baseline['with_outcome']}→{current['with_outcome']} traces with outcomes"
+        )
 
         if baseline["with_outcome"] < _MIN_N or current["with_outcome"] < _MIN_N:
             small = min(baseline["with_outcome"], current["with_outcome"])
@@ -182,6 +190,7 @@ class SuccessRateMetric(ComparisonMetric):
             direction=direction,
             baseline=baseline, current=current,
             delta=round(delta_pp, 2), formatted=formatted,
+            detail_lines=details,
             metadata={"pvalue": pval, "significant": significant},
             warnings=warnings,
         )
@@ -654,6 +663,18 @@ class TokenEfficiencyMetric(ComparisonMetric):
                 warnings=warnings,
             )
 
+        if baseline["total_tokens"] == 0 and current["total_tokens"] == 0:
+            warnings.append(
+                "All token counts are 0 — token data may not be populated in your traces"
+            )
+            return Observation(
+                name=self.name, description=self.description,
+                direction=Direction.NA,
+                baseline=baseline, current=current,
+                formatted="n/a — no token data",
+                warnings=warnings,
+            )
+
         delta = _pct_delta(b_tps, c_tps)
         sign = "+" if delta >= 0 else ""
         formatted = (
@@ -710,6 +731,18 @@ class CostQualityMetric(ComparisonMetric):
                 direction=Direction.NA,
                 baseline=baseline, current=current,
                 formatted=f"n/a — no successes in {side}",
+                warnings=warnings,
+            )
+
+        if baseline["total_cost"] == 0 and current["total_cost"] == 0:
+            warnings.append(
+                "All costs are $0 — cost data may not be populated in your traces"
+            )
+            return Observation(
+                name=self.name, description=self.description,
+                direction=Direction.NA,
+                baseline=baseline, current=current,
+                formatted="n/a — no cost data",
                 warnings=warnings,
             )
 

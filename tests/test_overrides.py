@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from agentflow.config import CostConfig, OutcomeConfig, SourceConfig
-from agentflow.converters.base import (
+from kalibra.config import CostConfig, OutcomeConfig, SourceConfig
+from kalibra.converters.base import (
     AF_COST,
     Trace,
     apply_overrides,

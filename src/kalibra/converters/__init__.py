@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from agentflow.converters.base import ReadableSpan, Trace
+from kalibra.converters.base import ReadableSpan, Trace
 
 
 def load_traces(path: str, trace_format: str = "auto", progress: bool = False) -> list[Trace]:
@@ -10,7 +10,7 @@ def load_traces(path: str, trace_format: str = "auto", progress: bool = False) -
 
     Supported formats:
     - ``swebench`` — SWE-bench ``.traj`` files or parquet
-    - ``json``     — agentflow JSONL (from ``agentflow pull``)
+    - ``json``     — kalibra JSONL (from ``kalibra pull``)
     - ``auto``     — detect from file/directory structure
     """
     p = Path(path)
@@ -19,11 +19,11 @@ def load_traces(path: str, trace_format: str = "auto", progress: bool = False) -
         trace_format = _detect_format(p)
 
     if trace_format == "swebench":
-        from agentflow.converters.swebench import load_swebench_traces
+        from kalibra.converters.swebench import load_swebench_traces
         return load_swebench_traces(p, progress=progress)
 
     if trace_format == "json":
-        from agentflow.converters.generic import load_json_traces
+        from kalibra.converters.generic import load_json_traces
         return load_json_traces(p)
 
     raise ValueError(f"Unknown trace format: {trace_format!r}. Supported: swebench, json")

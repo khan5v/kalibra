@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentflow"
+name = "kalibra"
 version = "0.1.0"
 description = "Regression detection and analysis for AI agents — compare runs, gate CI on quality, connect to Langfuse and LangSmith."
 readme = "README.md"
@@ -39,14 +39,14 @@ dev = [
 ]
 
 [project.scripts]
-agentflow = "agentflow.cli:main"
+kalibra = "kalibra.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/vorekhov/agentflow"
-Repository = "https://github.com/vorekhov/agentflow"
+Homepage = "https://github.com/vorekhov/kalibra"
+Repository = "https://github.com/vorekhov/kalibra"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agentflow"]
+packages = ["src/kalibra"]
 
 [tool.ruff]
 line-length = 100

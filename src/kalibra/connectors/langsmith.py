@@ -9,14 +9,14 @@ from datetime import datetime, timedelta, timezone
 from langsmith import Client
 from langsmith.utils import LangSmithError, LangSmithRateLimitError
 
-from agentflow.converters.base import (
+from kalibra.converters.base import (
     AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_MODEL, GEN_AI_OUTPUT_TOKENS,
     Trace, make_span,
 )
 
 
 class LangSmithConnector:
-    """Pull runs from LangSmith and convert to agentflow Trace objects.
+    """Pull runs from LangSmith and convert to kalibra Trace objects.
 
     Env vars:
         LANGSMITH_API_KEY
@@ -38,7 +38,7 @@ class LangSmithConnector:
         tags: list[str] | None = None,
         session_id: str | None = None,
     ) -> list[Trace]:
-        """Fetch root runs from LangSmith and convert to agentflow Traces."""
+        """Fetch root runs from LangSmith and convert to kalibra Traces."""
         client = self._make_client()
         since = since or (datetime.now(timezone.utc) - timedelta(days=7))
 
@@ -141,7 +141,7 @@ class LangSmithConnector:
         return f"and({', '.join(clauses)})"
 
     def _convert(self, run, child_runs: list) -> Trace | None:
-        """Convert a LangSmith root run + children → agentflow Trace."""
+        """Convert a LangSmith root run + children → kalibra Trace."""
         trace_id = str(run.id)
 
         # Outcome from run error / feedback
@@ -188,8 +188,8 @@ class LangSmithConnector:
         run_metadata = run_extra.get("metadata", {}) if isinstance(run_extra, dict) else {}
         if isinstance(run_metadata, dict):
             for k, v in run_metadata.items():
-                if v is not None and k not in ("agentflow_cost", "agentflow_input_tokens",
-                                                "agentflow_output_tokens", "ls_model_name"):
+                if v is not None and k not in ("kalibra_cost", "kalibra_input_tokens",
+                                                "kalibra_output_tokens", "ls_model_name"):
                     trace_meta[f"langsmith.{k}"] = v
         # Forward feedback stats
         fb = getattr(run, "feedback_stats", None)
@@ -218,7 +218,7 @@ class LangSmithConnector:
         t0 = _to_ts(run.start_time)
         t1 = _to_ts(run.end_time) if run.end_time else t0
 
-        # Try SDK fields first, then fall back to extra.metadata (agentflow custom fields)
+        # Try SDK fields first, then fall back to extra.metadata (kalibra custom fields)
         usage = getattr(run, "usage_metadata", None) or {}
         input_tokens = usage.get("input_tokens", 0) or 0
         output_tokens = usage.get("output_tokens", 0) or 0
@@ -254,11 +254,11 @@ class LangSmithConnector:
         metadata = extra.get("metadata", {}) if isinstance(extra, dict) else {}
         if not isinstance(metadata, dict):
             metadata = {}
-        attrs[AF_COST] = float(metadata.get("agentflow_cost", 0.0))
+        attrs[AF_COST] = float(metadata.get("kalibra_cost", 0.0))
         # Fall back to metadata tokens if SDK fields are empty
         if input_tokens == 0 and output_tokens == 0:
-            input_tokens = int(metadata.get("agentflow_input_tokens", 0))
-            output_tokens = int(metadata.get("agentflow_output_tokens", 0))
+            input_tokens = int(metadata.get("kalibra_input_tokens", 0))
+            output_tokens = int(metadata.get("kalibra_output_tokens", 0))
             attrs[GEN_AI_INPUT_TOKENS] = input_tokens
             attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
 
@@ -268,8 +268,8 @@ class LangSmithConnector:
                 attrs[f"gen_ai.request.{k}"] = _coerce_attr_value(v)
 
         # Forward extra.metadata as langsmith.metadata.* (skip already-consumed fields)
-        _consumed_meta = {"agentflow_cost", "agentflow_input_tokens",
-                          "agentflow_output_tokens", "ls_model_name"}
+        _consumed_meta = {"kalibra_cost", "kalibra_input_tokens",
+                          "kalibra_output_tokens", "ls_model_name"}
         for k, v in metadata.items():
             if k not in _consumed_meta and v is not None:
                 attrs[f"langsmith.metadata.{k}"] = _coerce_attr_value(v)

@@ -7,7 +7,7 @@ from functools import cached_property
 
 from opentelemetry.sdk.trace import ReadableSpan
 
-from agentflow.converters.base import Trace
+from kalibra.converters.base import Trace
 
 
 class TraceCollection:
@@ -32,7 +32,7 @@ class TraceCollection:
     @classmethod
     def from_path(cls, path: str, progress: bool = True) -> "TraceCollection":
         """Load from a file or directory (SWE-bench, JSONL — auto-detected)."""
-        from agentflow.converters import load_traces
+        from kalibra.converters import load_traces
         traces = load_traces(path, trace_format="auto", progress=progress)
         return cls(traces, source=path)
 

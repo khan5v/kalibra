@@ -12,7 +12,7 @@ from hashlib import md5
 
 import pandas as pd
 
-from agentflow.converters.base import Trace, make_span
+from kalibra.converters.base import Trace, make_span
 
 # ── Action classification ──
 
@@ -257,7 +257,7 @@ def _parse_action_format(trace_id: str, steps: list[dict], info: dict) -> Trace:
             "observation_length": len(obs),
         }
         if model_stats.get("model"):
-            from agentflow.converters.base import GEN_AI_MODEL, GEN_AI_INPUT_TOKENS, GEN_AI_OUTPUT_TOKENS, AF_COST
+            from kalibra.converters.base import GEN_AI_MODEL, GEN_AI_INPUT_TOKENS, GEN_AI_OUTPUT_TOKENS, AF_COST
             attrs[GEN_AI_MODEL]         = model_stats["model"]
             attrs[GEN_AI_INPUT_TOKENS]  = model_stats.get("tokens_sent", 0) // max(len(steps), 1)
             attrs[GEN_AI_OUTPUT_TOKENS] = model_stats.get("tokens_received", 0) // max(len(steps), 1)

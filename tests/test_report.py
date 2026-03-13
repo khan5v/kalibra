@@ -2,11 +2,11 @@
 
 import click
 
-from agentflow.collection import TraceCollection
-from agentflow.compare import compare_collections
-from agentflow.config import CompareConfig
-from agentflow.converters.base import AF_COST, Trace, make_span
-from agentflow.report import render
+from kalibra.collection import TraceCollection
+from kalibra.compare import compare_collections
+from kalibra.config import CompareConfig
+from kalibra.converters.base import AF_COST, Trace, make_span
+from kalibra.report import render
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ def _make_result(require=None):
 class TestTerminalReport:
     def test_header_present(self):
         text = render(_make_result(), "terminal")
-        assert "AgentFlow Compare" in text
+        assert "Kalibra Compare" in text
         assert "baseline.jsonl" in text
         assert "current.jsonl" in text
 
@@ -91,7 +91,7 @@ class TestTerminalReport:
 class TestMarkdownReport:
     def test_header(self):
         text = render(_make_result(), "markdown")
-        assert "## AgentFlow" in text
+        assert "## Kalibra" in text
         assert "**Baseline:**" in text
 
     def test_metrics_as_sections(self):

@@ -1,9 +1,9 @@
-# AgentFlow
+# Kalibra
 
 Regression detection and CI quality gates for AI agents.
 
 ```
-AgentFlow Compare
+Kalibra Compare
 ──────────────────────────────────────────────────────────
 Baseline     1,240 traces   (cached_sources/baseline.jsonl)
 Current      1,187 traces   (cached_sources/current.jsonl)
@@ -43,7 +43,7 @@ PASSED — all quality gates met
 
 ## What it does
 
-You change a prompt, swap a model, or refactor a tool. Did the agent get better or worse? AgentFlow compares a **baseline** run against a **current** run and tells you:
+You change a prompt, swap a model, or refactor a tool. Did the agent get better or worse? Kalibra compares a **baseline** run against a **current** run and tells you:
 
 - Success rate change with statistical significance (two-proportion z-test)
 - Per-task regressions and improvements
@@ -54,7 +54,7 @@ You change a prompt, swap a model, or refactor a tool. Did the agent get better 
 ## Install
 
 ```bash
-pip install git+https://github.com/khan5v/agentflow.git
+pip install git+https://github.com/khan5v/kalibra.git
 ```
 
 Python 3.11+.
@@ -65,20 +65,20 @@ Python 3.11+.
 
 ```bash
 # Compare local files
-agentflow compare --baseline ./baseline.jsonl --current ./current.jsonl
+kalibra compare --baseline ./baseline.jsonl --current ./current.jsonl
 
 # Compare named sources (fetched from Langfuse/LangSmith, cached locally)
-agentflow compare --baseline @baseline --current @current
+kalibra compare --baseline @baseline --current @current
 
 # Add quality gates
-agentflow compare --baseline @baseline --current @current \
+kalibra compare --baseline @baseline --current @current \
   --require "success_rate_delta >= -2" \
   --require "regressions <= 5" \
   --require "total_cost <= 50"
 
 # Output formats
-agentflow compare ... --format markdown    # GitHub PR comment
-agentflow compare ... --format json        # machine-readable
+kalibra compare ... --format markdown    # GitHub PR comment
+kalibra compare ... --format json        # machine-readable
 ```
 
 ---
@@ -109,13 +109,13 @@ All metrics run by default. Disable any by editing `config/compare.yml`.
 ## Pulling traces
 
 ```bash
-agentflow pull @baseline                    # pull from config/sources/
-agentflow pull @baseline --refresh          # force re-pull
-agentflow pull --source langfuse --project my-agent --since 7d
+kalibra pull @baseline                    # pull from config/sources/
+kalibra pull @baseline --refresh          # force re-pull
+kalibra pull --source langfuse --project my-agent --since 7d
 
 # Filter by tags or session
-agentflow pull --source langfuse --since 7d --tags agentflow --tags baseline
-agentflow pull --source langfuse --since 7d --session experiment-42
+kalibra pull --source langfuse --since 7d --tags kalibra --tags baseline
+kalibra pull --source langfuse --since 7d --session experiment-42
 ```
 
 Tag and session filters can also be set in source configs:
@@ -126,16 +126,16 @@ baseline:
   source: langfuse
   project: my-agent
   since: 7d
-  tags: [agentflow, baseline]
+  tags: [kalibra, baseline]
   session: experiment-42
 
 # config/sources/synth-langsmith.yml — LangSmith
 ls-baseline:
   source: langsmith
-  project: agentflow-synth      # LangSmith project name
+  project: kalibra-synth      # LangSmith project name
   since: 7d
   limit: 500
-  tags: [agentflow, baseline]
+  tags: [kalibra, baseline]
 ```
 
 All remote requests use exponential backoff (5 retries) on rate limits, server errors, and connection failures.
@@ -167,11 +167,11 @@ Ready-to-use configs in `config/examples/`. Use with `--config`:
 
 ```bash
 # Use an example config
-agentflow compare --baseline @baseline --current @current \
+kalibra compare --baseline @baseline --current @current \
   --config config/examples/ci-gate.yml
 
 # Or write your own
-agentflow compare --baseline @baseline --current @current \
+kalibra compare --baseline @baseline --current @current \
   --config config/compare.yml
 ```
 
@@ -218,13 +218,13 @@ ls-baseline:
   source: langsmith
   project: synth
   since: 7d
-  tags: [agentflow, baseline]
+  tags: [kalibra, baseline]
 
 ls-current:
   source: langsmith
   project: synth
   since: 7d
-  tags: [agentflow, current]
+  tags: [kalibra, current]
 ```
 
 Override locations: `--config /path/to/compare.yml`, `--sources /path/to/sources/`.
@@ -256,7 +256,7 @@ prod-baseline:
 
 **Outcome override** — looks up `field` in trace metadata, matches the value (case-insensitive) against `success` and `failure` keyword lists. If the field is missing or the value doesn't match either list, the connector's default heuristic is kept. Defaults for `success`/`failure` lists are `["success"]` and `["failure", "error", "failed"]`.
 
-**Cost override** — reads cost from the specified span attribute instead of the default `agentflow.cost`. Useful when your instrumentation writes cost to a custom field.
+**Cost override** — reads cost from the specified span attribute instead of the default `kalibra.cost`. Useful when your instrumentation writes cost to a custom field.
 
 The `field` path supports several forms:
 - Bare key: `status` → `trace.metadata["status"]`
@@ -269,11 +269,11 @@ Overrides are applied after the connector fetches traces and before JSONL is wri
 
 ## Custom metrics
 
-Drop `agentflow_metrics.py` in your project root — auto-discovered, no config needed:
+Drop `kalibra_metrics.py` in your project root — auto-discovered, no config needed:
 
 ```python
-# agentflow_metrics.py
-from agentflow import ComparisonMetric, Observation, TraceCollection
+# kalibra_metrics.py
+from kalibra import ComparisonMetric, Observation, TraceCollection
 
 class SubmitRateMetric(ComparisonMetric):
     name = "submit_rate"
@@ -304,14 +304,14 @@ Or add a dotted module path in `config/compare.yml`: `- mypackage.custom_metrics
 ## Programmatic API
 
 ```python
-import agentflow
+import kalibra
 
-baseline = agentflow.TraceCollection.from_traces(run_agent(suite, model="gpt-4"))
-current  = agentflow.TraceCollection.from_traces(run_agent(suite, model="gpt-4o"))
+baseline = kalibra.TraceCollection.from_traces(run_agent(suite, model="gpt-4"))
+current  = kalibra.TraceCollection.from_traces(run_agent(suite, model="gpt-4o"))
 
-result = agentflow.compare_collections(
+result = kalibra.compare_collections(
     baseline, current,
-    config=agentflow.CompareConfig(
+    config=kalibra.CompareConfig(
         metrics=["success_rate", "cost", "token_efficiency"],
         require=["success_rate_delta >= -2", "cost_per_success <= 0.05"],
     ),
@@ -326,10 +326,10 @@ print("passed:", result.thresholds_passed)
 
 ## Trace formats
 
-AgentFlow reads:
-- **JSONL** — portable format, produced by `agentflow pull`
+Kalibra reads:
+- **JSONL** — portable format, produced by `kalibra pull`
 - **SWE-bench** `.traj` files and parquet directories
-- **Langfuse** / **LangSmith** — via connectors with `agentflow pull`
+- **Langfuse** / **LangSmith** — via connectors with `kalibra pull`
 
 Internally, all traces are OTel `ReadableSpan` trees using [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/).
 
@@ -352,15 +352,15 @@ python3 scripts/synth_traces.py --mode current  --target langsmith --project syn
 python3 scripts/synth_traces.py --mode baseline --target langsmith --count 50 --tags myteam,v2
 ```
 
-Flags: `--count N` overrides the default trace count, `--tags a,b,c` sets comma-separated tags (default: `agentflow,<mode>`).
+Flags: `--count N` overrides the default trace count, `--tags a,b,c` sets comma-separated tags (default: `kalibra,<mode>`).
 
 ---
 
 ## Development
 
 ```bash
-git clone https://github.com/khan5v/agentflow.git
-cd agentflow
+git clone https://github.com/khan5v/kalibra.git
+cd kalibra
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest

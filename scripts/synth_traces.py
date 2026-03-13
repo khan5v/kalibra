@@ -13,8 +13,8 @@
   python3 scripts/synth_traces.py --mode baseline --target langsmith --count 50 --tags myteam,v2
 
   # Then pull + compare:
-  agentflow pull @baseline && agentflow pull @current
-  agentflow compare --baseline @baseline --current @current
+  kalibra pull @baseline && kalibra pull @current
+  kalibra compare --baseline @baseline --current @current
 """
 
 import argparse
@@ -465,8 +465,8 @@ def trace_to_langfuse_events(trace_data: dict, tags: list[str] | None = None) ->
             "body": {
                 "id": trace_id,
                 "name": "agent-run",
-                "sessionId": f"agentflow-synth-{mode}",
-                "tags": tags or ["agentflow", mode],
+                "sessionId": f"kalibra-synth-{mode}",
+                "tags": tags or ["kalibra", mode],
                 "output": {"outcome": "success" if trace_data["success"] else "failure"},
                 "metadata": {
                     "seed_mode": mode,
@@ -488,16 +488,17 @@ def trace_to_langfuse_events(trace_data: dict, tags: list[str] | None = None) ->
             "startTime": _ts_iso(t),
             "endTime": _ts_iso(t + step["duration"]),
             "level": "ERROR" if step["is_error"] else "DEFAULT",
-            "calculatedTotalCost": step["cost"],
         }
         if step["model"]:
             obs_body["model"] = step["model"]
-        if step["input_tokens"] > 0 or step["output_tokens"] > 0:
-            obs_body["usage"] = {
-                "input": step["input_tokens"],
-                "output": step["output_tokens"],
-                "unit": "TOKENS",
-            }
+        # Always send usage so Langfuse persists tokens and cost.
+        # calculatedTotalCost is read-only (server-computed); totalCost is writable.
+        obs_body["usage"] = {
+            "input": step["input_tokens"],
+            "output": step["output_tokens"],
+            "unit": "TOKENS",
+            "totalCost": step["cost"],
+        }
         if step["is_error"]:
             obs_body["statusMessage"] = f"Tool call failed: {step['name']} returned non-zero exit code"
 
@@ -522,7 +523,7 @@ def send_langfuse(mode: str, cfg: dict, paths: dict, rng: random.Random,
         )
 
     n = count or cfg["n_traces"]
-    tags = tags or ["agentflow", mode]
+    tags = tags or ["kalibra", mode]
     print(f"Sending {n} {mode} traces to Langfuse ({LANGFUSE_HOST})...")
     print(f"  Tags: {tags}")
     print()
@@ -550,12 +551,12 @@ def send_langfuse(mode: str, cfg: dict, paths: dict, rng: random.Random,
 
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY", "")
 LANGSMITH_API_URL = os.getenv("LANGSMITH_API_URL", "https://api.smith.langchain.com")
-LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "agentflow-synth")
+LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "kalibra-synth")
 
 def send_langsmith_trace(client, trace_data: dict, project: str, tags: list[str] | None = None) -> None:
     """Upload one trace to LangSmith using the SDK."""
     mode = trace_data["mode"]
-    run_tags = tags or ["agentflow", mode]
+    run_tags = tags or ["kalibra", mode]
     now = datetime.now(timezone.utc)
 
     root_id = uuid.uuid4()
@@ -585,9 +586,9 @@ def send_langsmith_trace(client, trace_data: dict, project: str, tags: list[str]
         end_time = t + timedelta(seconds=step["duration"])
 
         extra: dict = {"metadata": {
-            "agentflow_cost": step["cost"],
-            "agentflow_input_tokens": step["input_tokens"],
-            "agentflow_output_tokens": step["output_tokens"],
+            "kalibra_cost": step["cost"],
+            "kalibra_input_tokens": step["input_tokens"],
+            "kalibra_output_tokens": step["output_tokens"],
         }}
         if step["model"]:
             extra["invocation_params"] = {"model_name": step["model"]}
@@ -646,7 +647,7 @@ def send_langsmith(mode: str, cfg: dict, paths: dict, rng: random.Random, projec
     client = Client(api_key=LANGSMITH_API_KEY, api_url=LANGSMITH_API_URL)
 
     n = count or cfg["n_traces"]
-    tags = tags or ["agentflow", mode]
+    tags = tags or ["kalibra", mode]
     print(f"Sending {n} {mode} traces to LangSmith ({LANGSMITH_API_URL})...")
     print(f"  Project: {project}")
     print(f"  Tags: {tags}")
@@ -690,13 +691,13 @@ def send_traces(mode: str, target: str, project: str | None = None,
     print()
     if mode == "baseline":
         print("Next steps:")
-        print(f"  agentflow pull @{source_name}")
+        print(f"  kalibra pull @{source_name}")
         print(f"  python3 scripts/synth_traces.py --mode current --target {target}")
     else:
         baseline_name = source_name.replace("current", "baseline")
         print("Next steps:")
-        print(f"  agentflow pull @{source_name}")
-        print(f"  agentflow compare --baseline @{baseline_name} --current @{source_name}")
+        print(f"  kalibra pull @{source_name}")
+        print(f"  kalibra compare --baseline @{baseline_name} --current @{source_name}")
 
 
 def main() -> None:
@@ -713,7 +714,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--project", default=None,
-        help="LangSmith project name (default: LANGSMITH_PROJECT env or 'agentflow-synth').",
+        help="LangSmith project name (default: LANGSMITH_PROJECT env or 'kalibra-synth').",
     )
     parser.add_argument(
         "--count", type=int, default=None,
@@ -721,7 +722,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--tags", default=None,
-        help="Comma-separated tags to attach to traces (default: agentflow,<mode>).",
+        help="Comma-separated tags to attach to traces (default: kalibra,<mode>).",
     )
     args = parser.parse_args()
     tags = [t.strip() for t in args.tags.split(",") if t.strip()] if args.tags else None

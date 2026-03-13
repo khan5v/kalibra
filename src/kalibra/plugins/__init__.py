@@ -1,11 +1,11 @@
-"""Node-level metric plugin registry for AgentFlow.
+"""Node-level metric plugin registry for Kalibra.
 
-Built-in metrics live in ``agentflow.plugins.builtin``. To add your own:
+Built-in metrics live in ``kalibra.plugins.builtin``. To add your own:
 
 1. Create a Python module (e.g. ``my_metrics.py``).
 2. Import ``register`` and decorate your function::
 
-       from agentflow.plugins import register
+       from kalibra.plugins import register
 
        @register("p95_duration", "95th-percentile span duration in seconds")
        def p95_duration(node: str, traces: list) -> float:
@@ -18,11 +18,11 @@ Built-in metrics live in ``agentflow.plugins.builtin``. To add your own:
            idx = int(len(durations) * 0.95)
            return round(durations[min(idx, len(durations) - 1)], 3)
 
-3. Either name your file ``agentflow_metrics.py`` and drop it in your project
-   root (auto-discovered), or reference it in ``agentflow.yml`` under ``plugins:``.
+3. Either name your file ``kalibra_metrics.py`` and drop it in your project
+   root (auto-discovered), or reference it in ``kalibra.yml`` under ``plugins:``.
 """
 
-from agentflow.plugins.registry import (
+from kalibra.plugins.registry import (
     DEFAULT_NODE_METRICS,
     MetricDef,
     NodeMetricFn,
@@ -36,7 +36,7 @@ available = _default.available
 compute = _default.compute
 
 # Import builtin AFTER the default instance exists so @register calls resolve.
-import agentflow.plugins.builtin  # noqa: E402, F401
+import kalibra.plugins.builtin  # noqa: E402, F401
 
 __all__ = [
     "DEFAULT_NODE_METRICS",

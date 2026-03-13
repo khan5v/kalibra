@@ -1,18 +1,18 @@
-"""Built-in node-level metrics for AgentFlow.
+"""Built-in node-level metrics for Kalibra.
 
 This module serves as the reference implementation for custom metrics.
 Each function is registered via ``@register`` and receives
 ``(node: str, traces: list[Trace])`` — returning a single float.
 
 To add your own metrics, create a new module following the same pattern,
-then reference it in ``agentflow.yml`` under ``plugins:`` or name it
-``agentflow_metrics.py`` for zero-config auto-discovery.
+then reference it in ``kalibra.yml`` under ``plugins:`` or name it
+``kalibra_metrics.py`` for zero-config auto-discovery.
 """
 
 from __future__ import annotations
 
-from agentflow.converters.base import Trace, span_cost, span_input_tokens, span_is_error, span_output_tokens
-from agentflow.plugins.registry import _default
+from kalibra.converters.base import Trace, span_cost, span_input_tokens, span_is_error, span_output_tokens
+from kalibra.plugins.registry import _default
 
 register = _default.register
 

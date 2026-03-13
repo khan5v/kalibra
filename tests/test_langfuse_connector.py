@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentflow.connectors.langfuse import LangfuseConnector, _parse_ts, parse_since
-from agentflow.converters.base import span_cost, span_input_tokens, span_is_error, span_model, span_output_tokens
+from kalibra.connectors.langfuse import LangfuseConnector, _parse_ts, parse_since
+from kalibra.converters.base import span_cost, span_input_tokens, span_is_error, span_model, span_output_tokens
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -297,7 +297,7 @@ def test_iter_traces_single_page():
         "meta": {"totalPages": 1, "totalItems": 1},
     })
 
-    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx:
+    with patch("kalibra.connectors.langfuse.httpx") as mock_httpx:
         mock_httpx.get.side_effect = [page1]
         items = list(CONNECTOR._iter_traces("2026-01-01T00:00:00Z", limit=100))
 
@@ -310,7 +310,7 @@ def test_iter_traces_respects_limit():
                   for i in range(50)]
     page1 = _make_httpx_response({"data": items_page, "meta": {"totalPages": 3}})
 
-    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx:
+    with patch("kalibra.connectors.langfuse.httpx") as mock_httpx:
         mock_httpx.get.return_value = page1
         result = list(CONNECTOR._iter_traces("2026-01-01T00:00:00Z", limit=10))
 
@@ -324,7 +324,7 @@ def test_get_retries_on_429():
 
     success = _make_httpx_response({"data": [], "meta": {"totalPages": 1}})
 
-    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx, \
+    with patch("kalibra.connectors.langfuse.httpx") as mock_httpx, \
          patch("time.sleep"):
         mock_httpx.get.side_effect = [rate_limited, success]
         result = CONNECTOR._get(f"{HOST}/api/public/traces", {})
@@ -338,7 +338,7 @@ def test_get_raises_after_five_429s():
     rate_limited.headers = {}
     rate_limited.raise_for_status = MagicMock()
 
-    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx, \
+    with patch("kalibra.connectors.langfuse.httpx") as mock_httpx, \
          patch("time.sleep"):
         mock_httpx.get.return_value = rate_limited
         with pytest.raises(RuntimeError, match="rate limit exceeded"):
@@ -351,7 +351,7 @@ def test_fetch_trace_observations_uses_detail_endpoint():
         "observations": [OBSERVATION],
     })
 
-    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx:
+    with patch("kalibra.connectors.langfuse.httpx") as mock_httpx:
         mock_httpx.get.return_value = detail_response
         obs = CONNECTOR._fetch_trace_observations("trace-001")
 
@@ -372,7 +372,7 @@ def test_fetch_returns_traces_with_correct_outcomes():
     detail_success = _make_httpx_response({**RAW_TRACE, "observations": [OBSERVATION]})
     detail_failure = _make_httpx_response({**RAW_TRACE_FAILURE, "observations": []})
 
-    with patch("agentflow.connectors.langfuse.httpx") as mock_httpx, \
+    with patch("kalibra.connectors.langfuse.httpx") as mock_httpx, \
          patch("time.sleep"):
         mock_httpx.get.side_effect = [traces_page, detail_success, detail_failure]
         traces = CONNECTOR.fetch(since=None, limit=10, progress=False)

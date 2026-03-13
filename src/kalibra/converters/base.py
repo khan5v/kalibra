@@ -18,7 +18,7 @@ from opentelemetry.trace import SpanContext, TraceFlags
 GEN_AI_MODEL         = "gen_ai.request.model"
 GEN_AI_INPUT_TOKENS  = "gen_ai.usage.input_tokens"
 GEN_AI_OUTPUT_TOKENS = "gen_ai.usage.output_tokens"
-AF_COST              = "agentflow.cost"
+AF_COST              = "kalibra.cost"
 
 
 # ── Factory ───────────────────────────────────────────────────────────────────
@@ -171,7 +171,7 @@ def _apply_outcome_override(traces: list[Trace], cfg) -> None:
 
 
 def _apply_cost_override(traces: list[Trace], cfg) -> None:
-    """Read cost from an alternate span attribute instead of agentflow.cost."""
+    """Read cost from an alternate span attribute instead of kalibra.cost."""
     if not cfg.attr:
         return
     for trace in traces:

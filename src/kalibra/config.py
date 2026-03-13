@@ -8,7 +8,7 @@ from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 
 # Auto-discovered in cwd if present (no config entry needed).
-_AUTO_PLUGIN_FILE = "agentflow_metrics.py"
+_AUTO_PLUGIN_FILE = "kalibra_metrics.py"
 _CONFIG_FILE = "config/compare.yml"
 _SOURCES_DIR = "config/sources"
 _CACHE_DIR = "cached_sources"
@@ -70,8 +70,9 @@ class SourceConfig:
     """Named pull configuration, referenced as ``@name`` in compare/pull commands.
 
     Attributes:
-        source:  Connector to use — ``"langfuse"`` or ``"langsmith"``.
-        project: Project name or ID in the trace store.
+        source:  Connector to use — ``"langfuse"``, ``"langsmith"``, or ``"jsonl"``.
+        project: Project name or ID in the trace store (not used for jsonl).
+        path:    Local file path (required for ``source: jsonl``).
         since:   Time window to fetch — e.g. ``"7d"``, ``"24h"``, ``"2026-01-01"``.
         limit:   Max traces to fetch (default 5000).
         outcome: Override outcome detection (see ``OutcomeConfig``).
@@ -79,7 +80,8 @@ class SourceConfig:
     """
 
     source: str
-    project: str
+    project: str = ""
+    path: str | None = None
     since: str = "7d"
     limit: int = 5000
     tags: list[str] = dc_field(default_factory=list)
@@ -89,12 +91,18 @@ class SourceConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "SourceConfig":
+        source = data.get("source", "")
+        if source == "jsonl" and "path" not in data:
+            raise ValueError("JSONL source requires a 'path' field")
+        if source != "jsonl" and "project" not in data:
+            raise ValueError(f"Source '{source}' requires a 'project' field")
         raw_tags = data.get("tags") or []
         if isinstance(raw_tags, str):
             raw_tags = [raw_tags]
         return cls(
-            source=data["source"],
-            project=data["project"],
+            source=source,
+            project=data.get("project", ""),
+            path=data.get("path"),
             since=str(data.get("since", "7d")),
             limit=int(data.get("limit", 5000)),
             tags=[str(t) for t in raw_tags],
@@ -182,7 +190,7 @@ def resolve_metrics(config: CompareConfig, defaults: list) -> list:
        - Dotted path (e.g. ``"myproject.custom"```) → module is imported and
          its ``METRICS: list[ComparisonMetric]`` is appended.
        - Unknown string with no dot → silently skipped.
-    3. ``agentflow_metrics.py`` in the current directory is always auto-loaded
+    3. ``kalibra_metrics.py`` in the current directory is always auto-loaded
        if it exists (zero-config extension point, like pytest's conftest.py).
     """
     auto_extras = _load_auto_plugin()

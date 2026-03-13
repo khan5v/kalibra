@@ -1,7 +1,7 @@
 # Cost control — enforce budget limits on agent runs.
 #
 # Usage:
-#   agentflow compare --baseline @baseline --current @current \
+#   kalibra compare --baseline @baseline --current @current \
 #     --config config/examples/cost-control.yml
 #
 # Gates on absolute cost and token limits. Useful when you have a
