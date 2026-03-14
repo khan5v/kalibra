@@ -33,6 +33,7 @@ class TraceCollection:
     def from_path(cls, path: str, progress: bool = True) -> "TraceCollection":
         """Load from a file or directory (JSONL)."""
         from kalibra.converters import load_traces
+
         traces = load_traces(path, trace_format="auto", progress=progress)
         return cls(traces, source=path)
 
@@ -73,7 +74,7 @@ class TraceCollection:
 
     @cached_property
     def _spans_by_node(self) -> dict[str, list[ReadableSpan]]:
-        index: dict[str, list[Span]] = defaultdict(list)
+        index: dict[str, list[ReadableSpan]] = defaultdict(list)
         for t in self._traces:
             for s in t.spans:
                 index[s.name].append(s)

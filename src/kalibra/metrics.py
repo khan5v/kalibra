@@ -17,6 +17,7 @@ from kalibra.converters.base import span_input_tokens, span_is_error, span_outpu
 # Optional scipy for statistical tests on continuous metrics.
 try:
     from scipy.stats import mannwhitneyu as _mannwhitneyu
+
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
@@ -24,33 +25,37 @@ except ImportError:
 _SCIPY_HINT_SHOWN = False
 
 # Minimum sample sizes for reliable metric computation.
-_MIN_N = 30       # below this, any metric is suspect
+_MIN_N = 30  # below this, any metric is suspect
 _MIN_P95_N = 100  # below this, percentile stats are unreliable
 
 
 # ── Direction ─────────────────────────────────────────────────────────────────
 
+
 class Direction(str, Enum):
     """Comparison signal for an observation or a rolled-up comparison."""
-    UPGRADE      = "upgrade"       # meaningfully better
-    SAME         = "same"          # within noise
-    DEGRADATION  = "degradation"   # meaningfully worse
+
+    UPGRADE = "upgrade"  # meaningfully better
+    SAME = "same"  # within noise
+    DEGRADATION = "degradation"  # meaningfully worse
     INCONCLUSIVE = "inconclusive"  # metrics pull in opposite directions
-    NA           = "n/a"           # no data to compare
+    NA = "n/a"  # no data to compare
 
 
 # ── Result ────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class Observation:
     """Outcome of comparing one metric across baseline and current."""
+
     name: str
     description: str
     direction: Direction
-    baseline: Any                        # raw summary from summarize()
-    current: Any                         # raw summary from summarize()
-    delta: float | None = None           # primary scalar delta (pp or %)
-    formatted: str = ""                  # headline: delta + primary comparison
+    baseline: Any  # raw summary from summarize()
+    current: Any  # raw summary from summarize()
+    delta: float | None = None  # primary scalar delta (pp or %)
+    formatted: str = ""  # headline: delta + primary comparison
     detail_lines: list[str] = field(default_factory=list)  # sub-lines for breakdown
     metadata: dict = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -61,6 +66,7 @@ MetricResult = Observation
 
 
 # ── Base class ────────────────────────────────────────────────────────────────
+
 
 class ComparisonMetric(ABC):
     """Base class for all comparison metrics.
@@ -82,12 +88,15 @@ class ComparisonMetric(ABC):
 
             def compare(self, baseline: float, current: float) -> Observation:
                 delta = _pct_delta(baseline, current)
-                direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
+                direction = _direction_from_delta(
+                    delta, self.noise_threshold, self.higher_is_better,
+                )
                 return Observation(
                     name=self.name, description=self.description,
                     direction=direction,
                     baseline=baseline, current=current,
-                    delta=delta, formatted=f"{baseline:.0f} → {current:.0f}  {delta:+.1f}%",
+                    delta=delta,
+                    formatted=f"{baseline:.0f} → {current:.0f}  {delta:+.1f}%",
                 )
 
             def threshold_fields(self, result: Observation) -> dict[str, float]:
@@ -124,6 +133,7 @@ class ComparisonMetric(ABC):
 
 # ── Direction helper ──────────────────────────────────────────────────────────
 
+
 def _direction_from_delta(
     delta: float | None,
     noise_threshold: float,
@@ -137,6 +147,7 @@ def _direction_from_delta(
 
 
 # ── Mann-Whitney U helper ─────────────────────────────────────────────────────
+
 
 def _maybe_scipy_hint() -> None:
     """Show a one-time hint about installing scipy for better statistical tests."""
@@ -183,6 +194,7 @@ def _mannwhitney(
 
 # ── Built-in metrics ──────────────────────────────────────────────────────────
 
+
 class SuccessRateMetric(ComparisonMetric):
     name = "success_rate"
     description = "Task success rate delta with statistical significance"
@@ -196,7 +208,7 @@ class SuccessRateMetric(ComparisonMetric):
     def summarize(self, col: TraceCollection) -> dict:
         traces = col.all_traces()
         successes = sum(1 for t in traces if t.outcome == "success")
-        failures  = sum(1 for t in traces if t.outcome == "failure")
+        failures = sum(1 for t in traces if t.outcome == "failure")
         with_outcome = successes + failures
         # Rate denominator is traces with a known outcome, not all traces.
         # Traces with outcome=None are excluded — they carry no signal.
@@ -219,17 +231,21 @@ class SuccessRateMetric(ComparisonMetric):
                 side = "both datasets"
             warnings.append(f"No outcome data in {side} — success rate is unavailable")
             return Observation(
-                name=self.name, description=self.description,
+                name=self.name,
+                description=self.description,
                 direction=Direction.NA,
-                baseline=baseline, current=current,
+                baseline=baseline,
+                current=current,
                 formatted="n/a — no outcome data",
                 warnings=warnings,
             )
 
         delta_pp = (c_rate - b_rate) * 100
         _, pval = _two_proportion_ztest(
-            baseline["with_outcome"], baseline["successes"],
-            current["with_outcome"],  current["successes"],
+            baseline["with_outcome"],
+            baseline["successes"],
+            current["with_outcome"],
+            current["successes"],
         )
         significant = pval < 0.05
         sign = "+" if delta_pp >= 0 else ""
@@ -255,10 +271,13 @@ class SuccessRateMetric(ComparisonMetric):
             direction = Direction.SAME
 
         return Observation(
-            name=self.name, description=self.description,
+            name=self.name,
+            description=self.description,
             direction=direction,
-            baseline=baseline, current=current,
-            delta=round(delta_pp, 2), formatted=formatted,
+            baseline=baseline,
+            current=current,
+            delta=round(delta_pp, 2),
+            formatted=formatted,
             detail_lines=details,
             metadata={"pvalue": pval, "significant": significant},
             warnings=warnings,
@@ -298,8 +317,12 @@ class PerTaskMetric(ComparisonMetric):
     def compare(self, baseline: dict, current: dict) -> Observation:
         warnings: list[str] = []
         matched = {t for t in baseline if t in current}
-        regressions  = sorted(t for t in matched if baseline[t] == "success" and current[t] == "failure")
-        improvements = sorted(t for t in matched if baseline[t] == "failure" and current[t] == "success")
+        regressions = sorted(
+            t for t in matched if baseline[t] == "success" and current[t] == "failure"
+        )
+        improvements = sorted(
+            t for t in matched if baseline[t] == "failure" and current[t] == "success"
+        )
         formatted = (
             f"{len(matched):,} tasks matched — "
             f"✓ {len(improvements)} improved, ✗ {len(regressions)} regressed"
@@ -329,15 +352,17 @@ class PerTaskMetric(ComparisonMetric):
             direction = Direction.SAME
 
         return Observation(
-            name=self.name, description=self.description,
+            name=self.name,
+            description=self.description,
             direction=direction,
-            baseline=len(baseline), current=len(current),
+            baseline=len(baseline),
+            current=len(current),
             formatted=formatted,
             metadata={
                 "matched": len(matched),
-                "regressions":  regressions[:20],
+                "regressions": regressions[:20],
                 "improvements": improvements[:20],
-                "n_regressions":  len(regressions),
+                "n_regressions": len(regressions),
                 "n_improvements": len(improvements),
             },
             warnings=warnings,
@@ -345,7 +370,7 @@ class PerTaskMetric(ComparisonMetric):
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
-            "regressions":  result.metadata["n_regressions"],
+            "regressions": result.metadata["n_regressions"],
             "improvements": result.metadata["n_improvements"],
         }
 
@@ -379,11 +404,15 @@ class CostMetric(ComparisonMetric):
     def compare(self, baseline: dict, current: dict) -> Observation:
         obs_warnings: list[str] = []
         if baseline["all_zero"] and current["all_zero"]:
-            obs_warnings.append("All span costs are 0 — cost data may not be populated in your traces")
+            obs_warnings.append(
+                "All span costs are 0 — cost data may not be populated in your traces"
+            )
             return Observation(
-                name=self.name, description=self.description,
+                name=self.name,
+                description=self.description,
                 direction=Direction.NA,
-                baseline=baseline, current=current,
+                baseline=baseline,
+                current=current,
                 formatted="n/a — no cost data",
                 warnings=obs_warnings,
             )
@@ -394,10 +423,13 @@ class CostMetric(ComparisonMetric):
         med_delta = _pct_delta(baseline["median"], current["median"])
         avg_delta = _pct_delta(baseline["avg"], current["avg"])
         sign = "+" if med_delta >= 0 else ""
-        formatted = f"${baseline['median']:.4f} → ${current['median']:.4f} median  {sign}{med_delta:.1f}%"
+        formatted = (
+            f"${baseline['median']:.4f} → ${current['median']:.4f} median  {sign}{med_delta:.1f}%"
+        )
 
         details = [
-            f"${baseline['avg']:.4f} → ${current['avg']:.4f} avg  {'+'if avg_delta>=0 else ''}{avg_delta:.1f}%",
+            f"${baseline['avg']:.4f} → ${current['avg']:.4f} avg"
+            f"  {'+' if avg_delta >= 0 else ''}{avg_delta:.1f}%",
             f"${baseline['total']:.2f} → ${current['total']:.2f} total",
         ]
         if current["ci_95"] and baseline["ci_95"]:
@@ -411,21 +443,28 @@ class CostMetric(ComparisonMetric):
             if mw["significant"]:
                 details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — statistically significant")
             else:
-                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant")
+                details.append(
+                    f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant"
+                )
 
         direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
         if mw and not mw["significant"]:
             direction = Direction.SAME
 
         return Observation(
-            name=self.name, description=self.description,
+            name=self.name,
+            description=self.description,
             direction=direction,
-            baseline=baseline, current=current,
-            delta=med_delta, formatted=formatted,
+            baseline=baseline,
+            current=current,
+            delta=med_delta,
+            formatted=formatted,
             detail_lines=details,
             metadata={
-                "avg_delta": avg_delta, "ci_95": current["ci_95"],
-                "baseline_ci_95": baseline["ci_95"], "mannwhitney": mw,
+                "avg_delta": avg_delta,
+                "ci_95": current["ci_95"],
+                "baseline_ci_95": baseline["ci_95"],
+                "mannwhitney": mw,
             },
             warnings=obs_warnings,
         )
@@ -465,10 +504,14 @@ class StepsMetric(ComparisonMetric):
         med_delta = _pct_delta(baseline["median"], current["median"])
         avg_delta = _pct_delta(baseline["avg"], current["avg"])
         sign = "+" if med_delta >= 0 else ""
-        formatted = f"{baseline['median']:.0f} → {current['median']:.0f} steps/trace (median)  {sign}{med_delta:.1f}%"
+        formatted = (
+            f"{baseline['median']:.0f} → {current['median']:.0f}"
+            f" steps/trace (median)  {sign}{med_delta:.1f}%"
+        )
 
         details = [
-            f"{baseline['avg']:.1f} → {current['avg']:.1f} avg  {'+'if avg_delta>=0 else ''}{avg_delta:.1f}%",
+            f"{baseline['avg']:.1f} → {current['avg']:.1f} avg"
+            f"  {'+' if avg_delta >= 0 else ''}{avg_delta:.1f}%",
         ]
         if current["ci_95"] and baseline["ci_95"]:
             ci_lo = _pct_delta(baseline["median"], current["ci_95"][0])
@@ -481,21 +524,28 @@ class StepsMetric(ComparisonMetric):
             if mw["significant"]:
                 details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — statistically significant")
             else:
-                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant")
+                details.append(
+                    f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant"
+                )
 
         direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
         if mw and not mw["significant"]:
             direction = Direction.SAME
 
         return Observation(
-            name=self.name, description=self.description,
+            name=self.name,
+            description=self.description,
             direction=direction,
-            baseline=baseline, current=current,
-            delta=med_delta, formatted=formatted,
+            baseline=baseline,
+            current=current,
+            delta=med_delta,
+            formatted=formatted,
             detail_lines=details,
             metadata={
-                "avg_delta": avg_delta, "ci_95": current["ci_95"],
-                "baseline_ci_95": baseline["ci_95"], "mannwhitney": mw,
+                "avg_delta": avg_delta,
+                "ci_95": current["ci_95"],
+                "baseline_ci_95": baseline["ci_95"],
+                "mannwhitney": mw,
             },
         )
 
@@ -544,11 +594,15 @@ class DurationMetric(ComparisonMetric):
 
         # Primary stat: median (robust to tail outliers)
         sign = "+" if med_delta >= 0 else ""
-        formatted = f"{baseline['median']:.1f}s → {current['median']:.1f}s median  {sign}{med_delta:.1f}%"
+        formatted = (
+            f"{baseline['median']:.1f}s → {current['median']:.1f}s median  {sign}{med_delta:.1f}%"
+        )
 
         details = [
-            f"{baseline['avg']:.1f}s → {current['avg']:.1f}s avg  {'+'if avg_delta>=0 else ''}{avg_delta:.1f}%",
-            f"{baseline['p95']:.1f}s → {current['p95']:.1f}s P95  {'+'if p95_delta>=0 else ''}{p95_delta:.1f}%",
+            f"{baseline['avg']:.1f}s → {current['avg']:.1f}s avg"
+            f"  {'+' if avg_delta >= 0 else ''}{avg_delta:.1f}%",
+            f"{baseline['p95']:.1f}s → {current['p95']:.1f}s P95"
+            f"  {'+' if p95_delta >= 0 else ''}{p95_delta:.1f}%",
         ]
         if current["ci_95"] and baseline["ci_95"]:
             ci_lo = _pct_delta(baseline["median"], current["ci_95"][0])
@@ -561,12 +615,15 @@ class DurationMetric(ComparisonMetric):
             if mw["significant"]:
                 details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — statistically significant")
             else:
-                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant")
+                details.append(
+                    f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant"
+                )
 
         small_n = min(baseline["n"], current["n"])
         if small_n < _MIN_P95_N:
             obs_warnings.append(
-                f"P95 computed from {small_n} traces — recommend ≥{_MIN_P95_N} for stable percentiles"
+                f"P95 computed from {small_n} traces"
+                f" — recommend ≥{_MIN_P95_N} for stable percentiles"
             )
 
         direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
@@ -574,10 +631,13 @@ class DurationMetric(ComparisonMetric):
             direction = Direction.SAME
 
         return Observation(
-            name=self.name, description=self.description,
+            name=self.name,
+            description=self.description,
             direction=direction,
-            baseline=baseline, current=current,
-            delta=med_delta, formatted=formatted,
+            baseline=baseline,
+            current=current,
+            delta=med_delta,
+            formatted=formatted,
             detail_lines=details,
             metadata={
                 "avg_delta_pct": avg_delta,
@@ -592,10 +652,10 @@ class DurationMetric(ComparisonMetric):
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
-            "duration_delta_pct":        result.delta,
+            "duration_delta_pct": result.delta,
             "duration_median_delta_pct": result.metadata["median_delta_pct"],
-            "duration_p95_delta_pct":    result.metadata["p95_delta_pct"],
-            "total_duration":            result.current["total"],
+            "duration_p95_delta_pct": result.metadata["p95_delta_pct"],
+            "total_duration": result.current["total"],
         }
 
 
@@ -609,8 +669,11 @@ class ToolErrorRateMetric(ComparisonMetric):
     def summarize(self, col: TraceCollection) -> dict:
         spans = [s for t in col.all_traces() for s in t.spans]
         errors = sum(1 for s in spans if span_is_error(s))
-        return {"rate": errors / len(spans) if spans else 0.0,
-                "errors": errors, "total": len(spans)}
+        return {
+            "rate": errors / len(spans) if spans else 0.0,
+            "errors": errors,
+            "total": len(spans),
+        }
 
     def compare(self, baseline: dict, current: dict) -> Observation:
         warnings: list[str] = []
@@ -620,16 +683,17 @@ class ToolErrorRateMetric(ComparisonMetric):
 
         small_n = min(baseline["total"], current["total"])
         if small_n < _MIN_N:
-            warnings.append(
-                f"Only {small_n} tool invocations — error rate estimate may be noisy"
-            )
+            warnings.append(f"Only {small_n} tool invocations — error rate estimate may be noisy")
 
         direction = _direction_from_delta(delta_pp, self.noise_threshold, self.higher_is_better)
         return Observation(
-            name=self.name, description=self.description,
+            name=self.name,
+            description=self.description,
             direction=direction,
-            baseline=baseline, current=current,
-            delta=round(delta_pp, 2), formatted=formatted,
+            baseline=baseline,
+            current=current,
+            delta=round(delta_pp, 2),
+            formatted=formatted,
             warnings=warnings,
         )
 
@@ -657,12 +721,9 @@ class PathDistributionMetric(ComparisonMetric):
         warnings: list[str] = []
         b, c = baseline["top_paths"], current["top_paths"]
         jaccard = len(b & c) / len(b | c) if (b | c) else 1.0
-        new_paths     = list(c - b)[:10]
+        new_paths = list(c - b)[:10]
         dropped_paths = list(b - c)[:10]
-        formatted = (
-            f"Jaccard {jaccard:.2f}  "
-            f"(+{len(new_paths)} new, −{len(dropped_paths)} dropped)"
-        )
+        formatted = f"Jaccard {jaccard:.2f}  (+{len(new_paths)} new, −{len(dropped_paths)} dropped)"
 
         small_n = min(baseline["n"], current["n"])
         if small_n < _MIN_N:
@@ -674,10 +735,13 @@ class PathDistributionMetric(ComparisonMetric):
         direction = Direction.SAME if jaccard >= 0.8 else Direction.INCONCLUSIVE
 
         return Observation(
-            name=self.name, description=self.description,
+            name=self.name,
+            description=self.description,
             direction=direction,
-            baseline=len(b), current=len(c),
-            delta=round(jaccard, 3), formatted=formatted,
+            baseline=len(b),
+            current=len(c),
+            delta=round(jaccard, 3),
+            formatted=formatted,
             metadata={
                 "jaccard": round(jaccard, 3),
                 "new_paths": new_paths,
@@ -703,7 +767,7 @@ class TokenUsageMetric(ComparisonMetric):
 
     def summarize(self, col: TraceCollection) -> dict:
         traces = col.all_traces()
-        input_tok  = [sum(span_input_tokens(s) for s in t.spans) for t in traces]
+        input_tok = [sum(span_input_tokens(s) for s in t.spans) for t in traces]
         output_tok = [sum(span_output_tokens(s) for s in t.spans) for t in traces]
         totals = [i + o for i, o in zip(input_tok, output_tok)]
         return {
@@ -725,9 +789,11 @@ class TokenUsageMetric(ComparisonMetric):
                 "All token counts are 0 — token data may not be populated in your traces"
             )
             return Observation(
-                name=self.name, description=self.description,
+                name=self.name,
+                description=self.description,
                 direction=Direction.NA,
-                baseline=baseline, current=current,
+                baseline=baseline,
+                current=current,
                 formatted="n/a — no token data",
                 warnings=obs_warnings,
             )
@@ -739,12 +805,17 @@ class TokenUsageMetric(ComparisonMetric):
         avg_delta = _pct_delta(baseline["avg_total"], current["avg_total"])
         sign = "+" if med_delta >= 0 else ""
         formatted = (
-            f"{baseline['median_total']:,.0f} → {current['median_total']:,.0f} tokens/trace (median)  "
-            f"{sign}{med_delta:.1f}%"
+            f"{baseline['median_total']:,.0f} →"
+            f" {current['median_total']:,.0f}"
+            f" tokens/trace (median)  {sign}{med_delta:.1f}%"
         )
         details = [
-            f"{baseline['avg_total']:,.0f} → {current['avg_total']:,.0f} avg  {'+'if avg_delta>=0 else ''}{avg_delta:.1f}%",
-            f"in: {baseline['avg_input']:,.0f} → {current['avg_input']:,.0f} avg  |  out: {baseline['avg_output']:,.0f} → {current['avg_output']:,.0f} avg",
+            f"{baseline['avg_total']:,.0f} → {current['avg_total']:,.0f}"
+            f" avg  {'+' if avg_delta >= 0 else ''}{avg_delta:.1f}%",
+            f"in: {baseline['avg_input']:,.0f} →"
+            f" {current['avg_input']:,.0f} avg"
+            f"  |  out: {baseline['avg_output']:,.0f} →"
+            f" {current['avg_output']:,.0f} avg",
         ]
         ci = current["ci_95"]
         if ci and baseline["ci_95"]:
@@ -758,17 +829,22 @@ class TokenUsageMetric(ComparisonMetric):
             if mw["significant"]:
                 details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — statistically significant")
             else:
-                details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant")
+                details.append(
+                    f"Mann-Whitney U p={mw['pvalue']:.3f} — not statistically significant"
+                )
 
         direction = _direction_from_delta(med_delta, self.noise_threshold, self.higher_is_better)
         if mw and not mw["significant"]:
             direction = Direction.SAME
 
         return Observation(
-            name=self.name, description=self.description,
+            name=self.name,
+            description=self.description,
             direction=direction,
-            baseline=baseline, current=current,
-            delta=med_delta, formatted=formatted,
+            baseline=baseline,
+            current=current,
+            delta=med_delta,
+            formatted=formatted,
             detail_lines=details,
             metadata={
                 "avg_delta": avg_delta,
@@ -810,14 +886,18 @@ class TokenEfficiencyMetric(ComparisonMetric):
         warnings: list[str] = []
         b_tps, c_tps = baseline["tokens_per_success"], current["tokens_per_success"]
         if b_tps is None or c_tps is None:
-            side = "both" if b_tps is None and c_tps is None else (
-                "baseline" if b_tps is None else "current"
+            side = (
+                "both"
+                if b_tps is None and c_tps is None
+                else ("baseline" if b_tps is None else "current")
             )
             warnings.append(f"No successes in {side} — token efficiency unavailable")
             return Observation(
-                name=self.name, description=self.description,
+                name=self.name,
+                description=self.description,
                 direction=Direction.NA,
-                baseline=baseline, current=current,
+                baseline=baseline,
+                current=current,
                 formatted=f"n/a — no successes in {side}",
                 warnings=warnings,
             )
@@ -827,9 +907,11 @@ class TokenEfficiencyMetric(ComparisonMetric):
                 "All token counts are 0 — token data may not be populated in your traces"
             )
             return Observation(
-                name=self.name, description=self.description,
+                name=self.name,
+                description=self.description,
                 direction=Direction.NA,
-                baseline=baseline, current=current,
+                baseline=baseline,
+                current=current,
                 formatted="n/a — no token data",
                 warnings=warnings,
             )
@@ -842,10 +924,13 @@ class TokenEfficiencyMetric(ComparisonMetric):
         )
         direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
         return Observation(
-            name=self.name, description=self.description,
+            name=self.name,
+            description=self.description,
             direction=direction,
-            baseline=baseline, current=current,
-            delta=delta, formatted=formatted,
+            baseline=baseline,
+            current=current,
+            delta=delta,
+            formatted=formatted,
             warnings=warnings,
         )
 
@@ -871,8 +956,10 @@ class CostQualityMetric(ComparisonMetric):
         successes = [t for t in traces if t.outcome == "success"]
         if not successes:
             return {
-                "cost_per_success": None, "n_successes": 0,
-                "total_cost": total_cost, "n_total": len(traces),
+                "cost_per_success": None,
+                "n_successes": 0,
+                "total_cost": total_cost,
+                "n_total": len(traces),
             }
         return {
             "cost_per_success": total_cost / len(successes),
@@ -885,26 +972,30 @@ class CostQualityMetric(ComparisonMetric):
         warnings: list[str] = []
         b_cps, c_cps = baseline["cost_per_success"], current["cost_per_success"]
         if b_cps is None or c_cps is None:
-            side = "both" if b_cps is None and c_cps is None else (
-                "baseline" if b_cps is None else "current"
+            side = (
+                "both"
+                if b_cps is None and c_cps is None
+                else ("baseline" if b_cps is None else "current")
             )
             warnings.append(f"No successes in {side} — cost/quality unavailable")
             return Observation(
-                name=self.name, description=self.description,
+                name=self.name,
+                description=self.description,
                 direction=Direction.NA,
-                baseline=baseline, current=current,
+                baseline=baseline,
+                current=current,
                 formatted=f"n/a — no successes in {side}",
                 warnings=warnings,
             )
 
         if baseline["total_cost"] == 0 and current["total_cost"] == 0:
-            warnings.append(
-                "All costs are $0 — cost data may not be populated in your traces"
-            )
+            warnings.append("All costs are $0 — cost data may not be populated in your traces")
             return Observation(
-                name=self.name, description=self.description,
+                name=self.name,
+                description=self.description,
                 direction=Direction.NA,
-                baseline=baseline, current=current,
+                baseline=baseline,
+                current=current,
                 formatted="n/a — no cost data",
                 warnings=warnings,
             )
@@ -918,10 +1009,13 @@ class CostQualityMetric(ComparisonMetric):
         )
         direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
         return Observation(
-            name=self.name, description=self.description,
+            name=self.name,
+            description=self.description,
             direction=direction,
-            baseline=baseline, current=current,
-            delta=delta, formatted=formatted,
+            baseline=baseline,
+            current=current,
+            delta=delta,
+            formatted=formatted,
             warnings=warnings,
         )
 
@@ -951,6 +1045,7 @@ DEFAULT_METRICS: list[ComparisonMetric] = [
 
 
 # ── Math helpers ───────────────────────────────────────────────────────────────
+
 
 def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
@@ -998,10 +1093,7 @@ def _bootstrap_ci(
         v = stat_fn(values)
         return (v, v)
     rng = random.Random(42)
-    stats = sorted(
-        stat_fn(rng.choices(values, k=len(values)))
-        for _ in range(n_resamples)
-    )
+    stats = sorted(stat_fn(rng.choices(values, k=len(values))) for _ in range(n_resamples))
     lo = max(0, int(n_resamples * alpha / 2))
     hi = min(len(stats) - 1, int(n_resamples * (1 - alpha / 2)))
     return (round(stats[lo], 6), round(stats[hi], 6))

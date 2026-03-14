@@ -10,8 +10,12 @@ from typing import Generator
 import httpx
 
 from kalibra.converters.base import (
-    AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_MODEL, GEN_AI_OUTPUT_TOKENS,
-    Trace, make_span,
+    AF_COST,
+    GEN_AI_INPUT_TOKENS,
+    GEN_AI_MODEL,
+    GEN_AI_OUTPUT_TOKENS,
+    Trace,
+    make_span,
 )
 
 
@@ -45,12 +49,17 @@ class LangfuseConnector:
         fetched = 0
         total_available: int | None = None
 
-        for raw_trace, total in self._iter_traces(since_str, limit, tags=tags, session_id=session_id):
+        for raw_trace, total in self._iter_traces(
+            since_str, limit, tags=tags, session_id=session_id
+        ):
             if total_available is None:
                 total_available = total
                 effective_total = min(total, limit)
                 if progress:
-                    print(f"  Found {total:,} traces in Langfuse (fetching up to {effective_total:,})...")
+                    print(
+                        f"  Found {total:,} traces in Langfuse"
+                        f" (fetching up to {effective_total:,})..."
+                    )
             observations = self._fetch_trace_observations(raw_trace["id"])
             trace = self._convert(raw_trace, observations)
             if trace:
@@ -75,8 +84,13 @@ class LangfuseConnector:
                 resp = httpx.get(url, auth=self.auth, params=params, timeout=30)
             except (httpx.ConnectError, httpx.TimeoutException, OSError) as exc:
                 if attempt == max_retries - 1:
-                    raise RuntimeError(f"Langfuse request failed after {max_retries} retries: {exc}")
-                print(f"  Connection error (attempt {attempt + 1}/{max_retries}) — retrying in {delay:.0f}s...")
+                    raise RuntimeError(
+                        f"Langfuse request failed after {max_retries} retries: {exc}"
+                    )
+                print(
+                    f"  Connection error (attempt {attempt + 1}/{max_retries})"
+                    f" — retrying in {delay:.0f}s..."
+                )
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
                 continue
@@ -92,7 +106,11 @@ class LangfuseConnector:
             if resp.status_code >= 500:
                 if attempt == max_retries - 1:
                     resp.raise_for_status()
-                print(f"  Server error {resp.status_code} (attempt {attempt + 1}/{max_retries}) — retrying in {delay:.0f}s...")
+                print(
+                    f"  Server error {resp.status_code}"
+                    f" (attempt {attempt + 1}/{max_retries})"
+                    f" — retrying in {delay:.0f}s..."
+                )
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
                 continue
@@ -172,14 +190,16 @@ class LangfuseConnector:
         if not spans:
             # Create a single synthetic span from trace metadata
             t0_ns = int(_parse_ts(raw.get("timestamp")) * 1e9)
-            spans = [make_span(
-                name=raw.get("name", "unknown"),
-                trace_id=trace_id,
-                span_id=hashlib.md5(trace_id.encode()).hexdigest()[:16],
-                parent_span_id=None,
-                start_ns=t0_ns,
-                end_ns=t0_ns,
-            )]
+            spans = [
+                make_span(
+                    name=raw.get("name", "unknown"),
+                    trace_id=trace_id,
+                    span_id=hashlib.md5(trace_id.encode()).hexdigest()[:16],
+                    parent_span_id=None,
+                    start_ns=t0_ns,
+                    end_ns=t0_ns,
+                )
+            ]
 
         # ── Trace metadata: forward all trace-level fields ─────────────────
         trace_meta: dict = {
@@ -212,12 +232,26 @@ class LangfuseConnector:
 
     # Fields that are already mapped to first-class span properties or OTel attributes.
     # Everything else from the observation dict is forwarded as langfuse.* attributes.
-    _OBS_MAPPED_FIELDS = frozenset({
-        "id", "name", "type", "startTime", "endTime", "level", "statusMessage",
-        "parentObservationId", "usage", "calculatedTotalCost", "model",
-        # These are Langfuse internals, not useful as span attributes
-        "traceId", "projectId", "createdAt", "updatedAt",
-    })
+    _OBS_MAPPED_FIELDS = frozenset(
+        {
+            "id",
+            "name",
+            "type",
+            "startTime",
+            "endTime",
+            "level",
+            "statusMessage",
+            "parentObservationId",
+            "usage",
+            "calculatedTotalCost",
+            "model",
+            # These are Langfuse internals, not useful as span attributes
+            "traceId",
+            "projectId",
+            "createdAt",
+            "updatedAt",
+        }
+    )
 
     def _obs_to_span(self, trace_id: str, obs: dict):
         obs_id = obs.get("id", "")
@@ -244,16 +278,17 @@ class LangfuseConnector:
         parent_obs_id = obs.get("parentObservationId")
         parent_span_id = (
             hashlib.md5(f"{trace_id}:{parent_obs_id}".encode()).hexdigest()[:16]
-            if parent_obs_id else None
+            if parent_obs_id
+            else None
         )
 
         # ── Build attributes: known OTel fields first ────────────────────────
         attrs: dict = {"langfuse.type": obs.get("type", "")}
         if model:
             attrs[GEN_AI_MODEL] = model
-        attrs[GEN_AI_INPUT_TOKENS]  = input_tokens
+        attrs[GEN_AI_INPUT_TOKENS] = input_tokens
         attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
-        attrs[AF_COST]              = cost
+        attrs[AF_COST] = cost
 
         # Forward unmapped usage fields (e.g. total, unit, totalCost)
         for k, v in usage.items():
@@ -303,8 +338,18 @@ class LangfuseConnector:
 
         # Forward any other observation fields not in the mapped set
         for k, v in obs.items():
-            if k not in self._OBS_MAPPED_FIELDS and k not in ("metadata", "modelParameters",
-                    "completionStartTime", "version", "environment") and v is not None:
+            if (
+                k not in self._OBS_MAPPED_FIELDS
+                and k
+                not in (
+                    "metadata",
+                    "modelParameters",
+                    "completionStartTime",
+                    "version",
+                    "environment",
+                )
+                and v is not None
+            ):
                 attrs[f"langfuse.{k}"] = _coerce_attr_value(v)
 
         return make_span(
@@ -325,9 +370,11 @@ def _parse_ts(ts_str: str | None) -> float:
         return time.time()
     for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S"):
         try:
-            return datetime.strptime(ts_str[:26].rstrip("Z"), fmt.rstrip("Z")).replace(
-                tzinfo=timezone.utc
-            ).timestamp()
+            return (
+                datetime.strptime(ts_str[:26].rstrip("Z"), fmt.rstrip("Z"))
+                .replace(tzinfo=timezone.utc)
+                .timestamp()
+            )
         except ValueError:
             continue
     return time.time()
@@ -346,6 +393,7 @@ def _coerce_attr_value(v):
         return [_coerce_attr_value(item) for item in v]
     # Dicts, nested objects → JSON string
     import json
+
     try:
         return json.dumps(v, default=str)
     except (TypeError, ValueError):

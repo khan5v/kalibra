@@ -48,9 +48,11 @@ class Registry:
         The decorated function receives ``(node: str, traces: list[Trace])``
         and must return a single ``float``.
         """
+
         def decorator(fn: NodeMetricFn) -> NodeMetricFn:
             self._metrics[name] = MetricDef(name=name, description=description, fn=fn)
             return fn
+
         return decorator
 
     def available(self) -> list[str]:

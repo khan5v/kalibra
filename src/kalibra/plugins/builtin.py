@@ -11,7 +11,13 @@ then reference it in ``kalibra.yml`` under ``plugins:`` or name it
 
 from __future__ import annotations
 
-from kalibra.converters.base import Trace, span_cost, span_input_tokens, span_is_error, span_output_tokens
+from kalibra.converters.base import (
+    Trace,
+    span_cost,
+    span_input_tokens,
+    span_is_error,
+    span_output_tokens,
+)
 from kalibra.plugins.registry import _default
 
 register = _default.register
@@ -39,5 +45,10 @@ def cost_share(node: str, traces: list[Trace]) -> float:
 
 @register("token_intensity", "Average tokens per invocation of this node")
 def token_intensity(node: str, traces: list[Trace]) -> float:
-    tokens = [span_input_tokens(s) + span_output_tokens(s) for t in traces for s in t.spans if s.name == node]
+    tokens = [
+        span_input_tokens(s) + span_output_tokens(s)
+        for t in traces
+        for s in t.spans
+        if s.name == node
+    ]
     return round(sum(tokens) / len(tokens), 1) if tokens else 0.0

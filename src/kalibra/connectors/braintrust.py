@@ -9,8 +9,12 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from kalibra.converters.base import (
-    AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_MODEL, GEN_AI_OUTPUT_TOKENS,
-    Trace, make_span,
+    AF_COST,
+    GEN_AI_INPUT_TOKENS,
+    GEN_AI_MODEL,
+    GEN_AI_OUTPUT_TOKENS,
+    Trace,
+    make_span,
 )
 
 
@@ -247,8 +251,10 @@ class BraintrustConnector:
             if resp.status_code >= 500:
                 if attempt == self.MAX_RETRIES - 1:
                     resp.raise_for_status()
-                print(f"  Server error {resp.status_code} (attempt {attempt + 1}/{self.MAX_RETRIES}) "
-                      f"— retrying in {delay:.0f}s...")
+                msg = (f"  Server error {resp.status_code} "
+                       f"(attempt {attempt + 1}/{self.MAX_RETRIES}) "
+                       f"— retrying in {delay:.0f}s...")
+                print(msg)
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
                 continue
@@ -334,7 +340,7 @@ class BraintrustConnector:
             metadata=trace_meta,
         )
 
-    def _span_to_otel(self, trace_id: str, raw: dict) -> "ReadableSpan | None":
+    def _span_to_otel(self, trace_id: str, raw: dict):
         """Convert a single Braintrust span to an OTel ReadableSpan."""
         span_id = raw.get("span_id", raw.get("id", ""))
         if not span_id:

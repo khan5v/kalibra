@@ -64,8 +64,8 @@ def run_compare(
     output: str | None,
     refresh: bool,
     cache_dir: str,
-    outcome_field: str | None,
-    cost_attr: str | None,
+    outcome: str | None,
+    cost_field: str | None,
     task_id: str | None,
 ) -> None:
     """Execute the compare command."""
@@ -99,7 +99,11 @@ def run_compare(
 
     # ── CLI overrides ─────────────────────────────────────────────────────
     if task_id:
-        config.task_id = task_id
+        config.fields.task_id = task_id
+    if outcome:
+        config.fields.outcome = outcome
+    if cost_field:
+        config.fields.cost = cost_field
     if require:
         config.require = list(require)
 
@@ -158,34 +162,29 @@ def run_compare(
 
     # ── Load traces ───────────────────────────────────────────────────────
     from kalibra.collection import TraceCollection
+    from kalibra.converters import load_traces
+    from kalibra.converters.base import apply_overrides
 
-    if outcome_field or cost_attr:
+    click.echo(f"Loading {baseline_path}")
+    b_traces = load_traces(baseline_path)
+
+    click.echo(f"Loading {current_path}")
+    c_traces = load_traces(current_path)
+
+    # Apply field overrides from config (outcome, cost).
+    if config.fields.outcome or config.fields.cost:
         from kalibra.config import CostConfig, OutcomeConfig, SourceConfig
-        from kalibra.converters import load_traces
-        from kalibra.converters.base import apply_overrides
 
         override_cfg = SourceConfig(
             source="", project="",
-            outcome=OutcomeConfig(field=outcome_field) if outcome_field else None,
-            cost=CostConfig(attr=cost_attr) if cost_attr else None,
+            outcome=OutcomeConfig(field=config.fields.outcome) if config.fields.outcome else None,
+            cost=CostConfig(attr=config.fields.cost) if config.fields.cost else None,
         )
-
-        click.echo(f"Loading {baseline_path}")
-        b_traces = load_traces(baseline_path)
         apply_overrides(b_traces, override_cfg)
-
-        click.echo(f"Loading {current_path}")
-        c_traces = load_traces(current_path)
         apply_overrides(c_traces, override_cfg)
 
-        baseline_col = TraceCollection.from_traces(b_traces, source=baseline_path)
-        current_col = TraceCollection.from_traces(c_traces, source=current_path)
-    else:
-        click.echo(f"Loading {baseline_path}")
-        baseline_col = TraceCollection.from_path(baseline_path)
-
-        click.echo(f"Loading {current_path}")
-        current_col = TraceCollection.from_path(current_path)
+    baseline_col = TraceCollection.from_traces(b_traces, source=baseline_path)
+    current_col = TraceCollection.from_traces(c_traces, source=current_path)
 
     # ── Run comparison ────────────────────────────────────────────────────
     result = compare_collections(

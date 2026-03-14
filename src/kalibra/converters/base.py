@@ -9,8 +9,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 
-from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.sdk.trace import Status, StatusCode
+from opentelemetry.sdk.trace import ReadableSpan, Status, StatusCode
 from opentelemetry.trace import SpanContext, TraceFlags
 
 # ── OTel GenAI semantic convention attribute keys ─────────────────────────────

@@ -10,8 +10,12 @@ from langsmith import Client
 from langsmith.utils import LangSmithError, LangSmithRateLimitError
 
 from kalibra.converters.base import (
-    AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_MODEL, GEN_AI_OUTPUT_TOKENS,
-    Trace, make_span,
+    AF_COST,
+    GEN_AI_INPUT_TOKENS,
+    GEN_AI_MODEL,
+    GEN_AI_OUTPUT_TOKENS,
+    Trace,
+    make_span,
 )
 
 
@@ -64,13 +68,15 @@ class LangSmithConnector:
             print(f"  Fetching up to {limit:,} traces from LangSmith...")
 
         for run in runs:
-            child_runs = list(self._retry(
-                lambda r=run: client.list_runs(
-                    project_name=project_name,
-                    parent_run_id=str(r.id),
-                ),
-                f"list children of {run.id}",
-            ))
+            child_runs = list(
+                self._retry(
+                    lambda r=run: client.list_runs(
+                        project_name=project_name,
+                        parent_run_id=str(r.id),
+                    ),
+                    f"list children of {run.id}",
+                )
+            )
             trace = self._convert(run, child_runs)
             if trace:
                 traces.append(trace)
@@ -96,7 +102,8 @@ class LangSmithConnector:
             except LangSmithRateLimitError:
                 if attempt == self.MAX_RETRIES - 1:
                     raise RuntimeError(
-                        f"LangSmith rate limit exceeded after {self.MAX_RETRIES} retries ({description})"
+                        f"LangSmith rate limit exceeded after"
+                        f" {self.MAX_RETRIES} retries ({description})"
                     )
                 print(f"  Rate limited ({description}) — waiting {delay:.0f}s...")
                 time.sleep(delay)
@@ -104,17 +111,29 @@ class LangSmithConnector:
             except LangSmithError as exc:
                 if attempt == self.MAX_RETRIES - 1:
                     raise RuntimeError(
-                        f"LangSmith request failed after {self.MAX_RETRIES} retries ({description}): {exc}"
+                        f"LangSmith request failed after"
+                        f" {self.MAX_RETRIES} retries"
+                        f" ({description}): {exc}"
                     )
-                print(f"  LangSmith error ({description}, attempt {attempt + 1}/{self.MAX_RETRIES}) — retrying in {delay:.0f}s...")
+                print(
+                    f"  LangSmith error ({description},"
+                    f" attempt {attempt + 1}/{self.MAX_RETRIES})"
+                    f" — retrying in {delay:.0f}s..."
+                )
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
             except (ConnectionError, TimeoutError, OSError) as exc:
                 if attempt == self.MAX_RETRIES - 1:
                     raise RuntimeError(
-                        f"LangSmith connection failed after {self.MAX_RETRIES} retries ({description}): {exc}"
+                        f"LangSmith connection failed after"
+                        f" {self.MAX_RETRIES} retries"
+                        f" ({description}): {exc}"
                     )
-                print(f"  Connection error ({description}, attempt {attempt + 1}/{self.MAX_RETRIES}) — retrying in {delay:.0f}s...")
+                print(
+                    f"  Connection error ({description},"
+                    f" attempt {attempt + 1}/{self.MAX_RETRIES})"
+                    f" — retrying in {delay:.0f}s..."
+                )
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
 
@@ -188,8 +207,12 @@ class LangSmithConnector:
         run_metadata = run_extra.get("metadata", {}) if isinstance(run_extra, dict) else {}
         if isinstance(run_metadata, dict):
             for k, v in run_metadata.items():
-                if v is not None and k not in ("kalibra_cost", "kalibra_input_tokens",
-                                                "kalibra_output_tokens", "ls_model_name"):
+                if v is not None and k not in (
+                    "kalibra_cost",
+                    "kalibra_input_tokens",
+                    "kalibra_output_tokens",
+                    "ls_model_name",
+                ):
                     trace_meta[f"langsmith.{k}"] = v
         # Forward feedback stats
         fb = getattr(run, "feedback_stats", None)
@@ -204,12 +227,25 @@ class LangSmithConnector:
         )
 
     # Run attributes already mapped to first-class span properties or OTel attributes.
-    _RUN_MAPPED_ATTRS = frozenset({
-        "id", "name", "run_type", "start_time", "end_time", "error",
-        "parent_run_id", "tags", "feedback_stats", "outputs",
-        "usage_metadata", "prompt_tokens", "completion_tokens",
-        "session_name", "session_id",
-    })
+    _RUN_MAPPED_ATTRS = frozenset(
+        {
+            "id",
+            "name",
+            "run_type",
+            "start_time",
+            "end_time",
+            "error",
+            "parent_run_id",
+            "tags",
+            "feedback_stats",
+            "outputs",
+            "usage_metadata",
+            "prompt_tokens",
+            "completion_tokens",
+            "session_name",
+            "session_id",
+        }
+    )
 
     def _run_to_span(self, trace_id: str, run, is_root: bool = False):
         run_id = str(run.id)
@@ -241,14 +277,15 @@ class LangSmithConnector:
         parent_run_id = str(run.parent_run_id) if run.parent_run_id else None
         parent_span_id = (
             hashlib.md5(f"{trace_id}:{parent_run_id}".encode()).hexdigest()[:16]
-            if parent_run_id else None
+            if parent_run_id
+            else None
         )
 
         # ── Build attributes: known OTel fields first ────────────────────────
         attrs: dict = {"langsmith.run_type": run.run_type or ""}
         if model:
             attrs[GEN_AI_MODEL] = model
-        attrs[GEN_AI_INPUT_TOKENS]  = input_tokens
+        attrs[GEN_AI_INPUT_TOKENS] = input_tokens
         attrs[GEN_AI_OUTPUT_TOKENS] = output_tokens
         # LangSmith doesn't reliably persist cost/tokens — read from extra.metadata
         metadata = extra.get("metadata", {}) if isinstance(extra, dict) else {}
@@ -268,8 +305,12 @@ class LangSmithConnector:
                 attrs[f"gen_ai.request.{k}"] = _coerce_attr_value(v)
 
         # Forward extra.metadata as langsmith.metadata.* (skip already-consumed fields)
-        _consumed_meta = {"kalibra_cost", "kalibra_input_tokens",
-                          "kalibra_output_tokens", "ls_model_name"}
+        _consumed_meta = {
+            "kalibra_cost",
+            "kalibra_input_tokens",
+            "kalibra_output_tokens",
+            "ls_model_name",
+        }
         for k, v in metadata.items():
             if k not in _consumed_meta and v is not None:
                 attrs[f"langsmith.metadata.{k}"] = _coerce_attr_value(v)
@@ -309,6 +350,7 @@ def _coerce_attr_value(v):
     if isinstance(v, (list, tuple)):
         return [_coerce_attr_value(item) for item in v]
     import json
+
     try:
         return json.dumps(v, default=str)
     except (TypeError, ValueError):

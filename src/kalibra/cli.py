@@ -53,16 +53,16 @@ def init(force):
               help="Re-pull @name sources even if a local cache exists.")
 @click.option("--cache-dir", default=DEFAULT_CACHE_DIR, type=click.Path(),
               help="Directory for cached pulled traces.", show_default=True)
-@click.option("--outcome-field", default=None,
-              help="Override outcome from this trace field (e.g. metadata.result).")
-@click.option("--cost-attr", default=None,
-              help="Override cost from this span attribute (e.g. custom.cost_usd).")
+@click.option("--outcome", default=None,
+              help="Metadata field for outcome detection (e.g. metadata.result).")
+@click.option("--cost", "cost_field", default=None,
+              help="Span attribute for cost (e.g. custom.cost_usd).")
 @click.option("--task-id", default=None,
               help="Metadata field for per-task matching (e.g. braintrust.task_id).")
 @click.option("--metrics", "show_metrics", is_flag=True, default=False,
               help="List all available metrics and their --require threshold fields, then exit.")
 def compare(baseline, current, out_format, require, config_path, sources_dir,
-            output, refresh, cache_dir, outcome_field, cost_attr, task_id, show_metrics):
+            output, refresh, cache_dir, outcome, cost_field, task_id, show_metrics):
     """Compare two trace datasets — regression detection, statistical diff.
 
     \b
@@ -85,7 +85,7 @@ def compare(baseline, current, out_format, require, config_path, sources_dir,
         baseline=baseline, current=current, out_format=out_format,
         require=require, config_path=config_path, sources_dir=sources_dir,
         output=output, refresh=refresh, cache_dir=cache_dir,
-        outcome_field=outcome_field, cost_attr=cost_attr, task_id=task_id,
+        outcome=outcome, cost_field=cost_field, task_id=task_id,
     )
 
 

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from kalibra.collection import TraceCollection
 from kalibra.config import CompareConfig, resolve_metrics
-from kalibra.metrics import ComparisonMetric, DEFAULT_METRICS, Direction, Observation
-
+from kalibra.metrics import DEFAULT_METRICS, ComparisonMetric, Direction, Observation
 
 # ── Result types ──────────────────────────────────────────────────────────────
 

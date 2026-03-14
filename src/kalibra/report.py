@@ -9,29 +9,28 @@ import click
 from kalibra.compare import CompareResult
 from kalibra.metrics import Direction
 
-
 _DIRECTION_BADGE = {
-    Direction.UPGRADE:      "▲",
-    Direction.SAME:         "≈",
-    Direction.DEGRADATION:  "▼",
+    Direction.UPGRADE: "▲",
+    Direction.SAME: "≈",
+    Direction.DEGRADATION: "▼",
     Direction.INCONCLUSIVE: "~",
-    Direction.NA:           "—",
+    Direction.NA: "—",
 }
 
 _DIRECTION_LABEL = {
-    Direction.UPGRADE:      "IMPROVED",
-    Direction.SAME:         "UNCHANGED",
-    Direction.DEGRADATION:  "REGRESSED",
+    Direction.UPGRADE: "IMPROVED",
+    Direction.SAME: "UNCHANGED",
+    Direction.DEGRADATION: "REGRESSED",
     Direction.INCONCLUSIVE: "MIXED",
-    Direction.NA:           "N/A",
+    Direction.NA: "N/A",
 }
 
 _DIRECTION_COLOR = {
-    Direction.UPGRADE:      "green",
-    Direction.SAME:         "cyan",
-    Direction.DEGRADATION:  "red",
+    Direction.UPGRADE: "green",
+    Direction.SAME: "cyan",
+    Direction.DEGRADATION: "red",
     Direction.INCONCLUSIVE: "yellow",
-    Direction.NA:           "white",
+    Direction.NA: "white",
 }
 
 
@@ -46,17 +45,18 @@ def _styled_label(direction: Direction) -> str:
     color = _DIRECTION_COLOR[direction]
     return click.style(_DIRECTION_LABEL[direction], fg=color, bold=True)
 
+
 _LABELS = {
-    "success_rate":       "Success rate",
-    "cost":               "Cost",
-    "steps":              "Steps",
-    "duration":           "Duration",
-    "tool_error_rate":    "Tool errors",
-    "path_distribution":  "Path dist.",
-    "token_usage":        "Token usage",
-    "token_efficiency":   "Token eff.",
-    "cost_quality":       "Cost / quality",
-    "per_task":           "Per-task",
+    "success_rate": "Success rate",
+    "cost": "Cost",
+    "steps": "Steps",
+    "duration": "Duration",
+    "tool_error_rate": "Tool errors",
+    "path_distribution": "Path dist.",
+    "token_usage": "Token usage",
+    "token_efficiency": "Token eff.",
+    "cost_quality": "Cost / quality",
+    "per_task": "Per-task",
 }
 
 _INDENT = "  "
@@ -76,6 +76,7 @@ def render(result: CompareResult, fmt: str) -> str:
 
 # ── Terminal ───────────────────────────────────────────────────────────────────
 
+
 def _terminal(r: CompareResult) -> str:
     bar = click.style("─" * 58, dim=True)
 
@@ -83,47 +84,56 @@ def _terminal(r: CompareResult) -> str:
     badge = _styled_badge(direction)
     dir_label = _styled_label(direction)
 
+    b_src = click.style(f"({r.baseline_source})", dim=True)
+    c_src = click.style(f"({r.current_source})", dim=True)
+
     lines = [
         "",
         f"{_INDENT}{click.style('Kalibra Compare', bold=True)}",
         f"{_INDENT}{bar}",
-        f"{_INDENT}{click.style('Baseline', dim=True)}  {r.baseline_count:>8,} traces   {click.style(f'({r.baseline_source})', dim=True)}",
-        f"{_INDENT}{click.style('Current', dim=True)}   {r.current_count:>8,} traces   {click.style(f'({r.current_source})', dim=True)}",
-        f"{_INDENT}{click.style('Direction', dim=True)} {badge} {dir_label}",
+        (f"{_INDENT}{click.style('Baseline', dim=True)}  {r.baseline_count:>8,} traces   {b_src}"),
+        (f"{_INDENT}{click.style('Current', dim=True)}   {r.current_count:>8,} traces   {c_src}"),
+        (f"{_INDENT}{click.style('Direction', dim=True)} {badge} {dir_label}"),
         "",
     ]
 
     if r.warnings:
         for w in r.warnings:
-            lines.append(f"{_INDENT}{click.style('!', fg='yellow', bold=True)}  {click.style(w, fg='yellow')}")
+            warn_icon = click.style("!", fg="yellow", bold=True)
+            lines.append(f"{_INDENT}{warn_icon}  {click.style(w, fg='yellow')}")
         lines.append("")
 
     for obs in r.comparison.observations.values():
         badge_m = _styled_badge(obs.direction)
         label_m = _LABELS.get(obs.name, obs.name)
+        label_styled = click.style(f"{label_m:<16}", bold=True)
 
         if obs.name == "per_task":
             meta = obs.metadata
             if meta["matched"] == 0 and not obs.warnings:
                 continue
-            lines.append(f"{_INDENT}{badge_m} {click.style(f'{label_m:<16}', bold=True)}{obs.formatted}")
+            lines.append(f"{_INDENT}{badge_m} {label_styled}{obs.formatted}")
             n_imp = meta["n_improvements"]
             n_reg = meta["n_regressions"]
             if n_reg > 0:
                 sample = ", ".join(meta["regressions"][:3])
-                suffix = f" (+{n_reg - 3} more)" if n_reg > 3 else ""
-                lines.append(f"{_DETAIL_INDENT}{click.style('regressed:', fg='red')} {sample}{suffix}")
+                more = f" (+{n_reg - 3} more)" if n_reg > 3 else ""
+                reg = click.style("regressed:", fg="red")
+                lines.append(f"{_DETAIL_INDENT}{reg} {sample}{more}")
             if n_imp > 0:
                 sample = ", ".join(meta["improvements"][:3])
-                suffix = f" (+{n_imp - 3} more)" if n_imp > 3 else ""
-                lines.append(f"{_DETAIL_INDENT}{click.style('improved:', fg='green')}  {sample}{suffix}")
+                more = f" (+{n_imp - 3} more)" if n_imp > 3 else ""
+                imp = click.style("improved:", fg="green")
+                lines.append(f"{_DETAIL_INDENT}{imp}  {sample}{more}")
         else:
-            lines.append(f"{_INDENT}{badge_m} {click.style(f'{label_m:<16}', bold=True)}{obs.formatted}")
+            lines.append(f"{_INDENT}{badge_m} {label_styled}{obs.formatted}")
             for detail in obs.detail_lines:
                 lines.append(f"{_DETAIL_INDENT}{click.style(detail, dim=True)}")
 
         for w in obs.warnings:
-            lines.append(f"{_DETAIL_INDENT}{click.style('!', fg='yellow', bold=True)}  {click.style(w, fg='yellow')}")
+            warn_icon = click.style("!", fg="yellow", bold=True)
+            warn_text = click.style(w, fg="yellow")
+            lines.append(f"{_DETAIL_INDENT}{warn_icon}  {warn_text}")
         lines.append("")
 
     if r.validation.gates:
@@ -136,19 +146,23 @@ def _terminal(r: CompareResult) -> str:
                 icon = click.style(" OK ", fg="green", bold=True)
             else:
                 icon = click.style("FAIL", fg="red", bold=True)
-            actual = f"{g.actual:.2f}" if g.actual == g.actual else "n/a"  # nan-safe
+            # nan-safe actual value
+            actual = f"{g.actual:.2f}" if g.actual == g.actual else "n/a"
             line = f"{_INDENT}  [{icon}] {g.expr:<{max_expr}}   actual: {actual}"
             if g.warning:
-                line += f"  {click.style(f'({g.warning})', fg='yellow')}"
+                warn = click.style(f"({g.warning})", fg="yellow")
+                line += f"  {warn}"
             lines.append(line)
         lines.append("")
 
     lines.append(f"{_INDENT}{bar}")
     if r.validation.gates:
         if r.validation.passed:
-            lines.append(f"{_INDENT}{click.style('PASSED', fg='green', bold=True)} — all quality gates met")
+            ok = click.style("PASSED", fg="green", bold=True)
+            lines.append(f"{_INDENT}{ok} — all quality gates met")
         else:
-            lines.append(f"{_INDENT}{click.style('FAILED', fg='red', bold=True)} — quality gate violation (exit code 1)")
+            fail = click.style("FAILED", fg="red", bold=True)
+            lines.append(f"{_INDENT}{fail} — quality gate violation (exit code 1)")
     else:
         lines.append(f"{_INDENT}{badge} {dir_label} — no quality gates configured")
     lines.append("")
@@ -157,6 +171,7 @@ def _terminal(r: CompareResult) -> str:
 
 # ── Markdown ───────────────────────────────────────────────────────────────────
 
+
 def _markdown(r: CompareResult) -> str:
     direction = r.comparison.direction
     badge = _DIRECTION_BADGE[direction]
@@ -164,10 +179,8 @@ def _markdown(r: CompareResult) -> str:
 
     if r.validation.gates:
         verdict = "PASSED" if r.validation.passed else "FAILED"
-        verdict_icon = "pass" if r.validation.passed else "fail"
     else:
         verdict = dir_label
-        verdict_icon = "info"
 
     lines = [
         "## Kalibra: Agent Quality Report\n",
@@ -226,8 +239,8 @@ def _markdown(r: CompareResult) -> str:
     if r.validation.gates:
         lines.append(
             "> **FAILED** — one or more thresholds not met"
-            if not r.validation.passed else
-            "> **PASSED** — all thresholds met"
+            if not r.validation.passed
+            else "> **PASSED** — all thresholds met"
         )
     else:
         lines.append(f"> {badge} {dir_label} (no quality gates configured)")
@@ -238,6 +251,7 @@ def _markdown(r: CompareResult) -> str:
 
 # ── JSON ───────────────────────────────────────────────────────────────────────
 
+
 def _json(r: CompareResult) -> str:
     def _ser(v):
         if isinstance(v, set):
@@ -246,21 +260,21 @@ def _json(r: CompareResult) -> str:
 
     payload = {
         "baseline": {"source": r.baseline_source, "count": r.baseline_count},
-        "current":  {"source": r.current_source,  "count": r.current_count},
+        "current": {"source": r.current_source, "count": r.current_count},
         "warnings": r.warnings,
         "comparison": {
             "direction": r.comparison.direction.value,
             "observations": {
                 name: {
                     "description": obs.description,
-                    "direction":   obs.direction.value,
-                    "baseline":    _ser(obs.baseline),
-                    "current":     _ser(obs.current),
-                    "delta":       obs.delta,
-                    "formatted":   obs.formatted,
+                    "direction": obs.direction.value,
+                    "baseline": _ser(obs.baseline),
+                    "current": _ser(obs.current),
+                    "delta": obs.delta,
+                    "formatted": obs.formatted,
                     "detail_lines": obs.detail_lines,
-                    "metadata":    {k: _ser(v) for k, v in obs.metadata.items()},
-                    "warnings":    obs.warnings,
+                    "metadata": {k: _ser(v) for k, v in obs.metadata.items()},
+                    "warnings": obs.warnings,
                 }
                 for name, obs in r.comparison.observations.items()
             },
@@ -268,8 +282,12 @@ def _json(r: CompareResult) -> str:
         "validation": {
             "passed": r.validation.passed,
             "gates": [
-                {"expr": g.expr, "passed": g.passed, "actual": g.actual,
-                 "metric_name": g.metric_name}
+                {
+                    "expr": g.expr,
+                    "passed": g.passed,
+                    "actual": g.actual,
+                    "metric_name": g.metric_name,
+                }
                 for g in r.validation.gates
             ],
         },

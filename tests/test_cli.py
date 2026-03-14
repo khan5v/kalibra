@@ -236,8 +236,8 @@ def test_compare_nonexistent_current_errors(runner, trace_file):
 
 # ── CLI overrides (#1) ───────────────────────────────────────────────────────
 
-def test_compare_outcome_field_override(runner, tmp_path):
-    """--outcome-field applies outcome override to direct file paths."""
+def test_compare_outcome_override(runner, tmp_path):
+    """--outcome applies outcome override to direct file paths."""
     import json
 
     f = tmp_path / "traces.jsonl"
@@ -251,14 +251,14 @@ def test_compare_outcome_field_override(runner, tmp_path):
         "compare",
         "--baseline", path,
         "--current", path,
-        "--outcome-field", "metadata.result",
+        "--outcome", "metadata.result",
     ])
     assert result.exit_code == 0
     assert "50.0%" in result.output
 
 
-def test_compare_cost_attr_override(runner, tmp_path):
-    """--cost-attr applies cost override to direct file paths."""
+def test_compare_cost_override(runner, tmp_path):
+    """--cost applies cost override to direct file paths."""
     import json
 
     f = tmp_path / "traces.jsonl"
@@ -274,7 +274,7 @@ def test_compare_cost_attr_override(runner, tmp_path):
         "compare",
         "--baseline", path,
         "--current", path,
-        "--cost-attr", "custom.cost",
+        "--cost", "custom.cost",
     ])
     assert result.exit_code == 0
 
