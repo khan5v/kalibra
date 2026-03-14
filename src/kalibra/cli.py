@@ -377,6 +377,194 @@ def validate(path: str):
     click.echo(f"\n  Valid")
 
 
+# ── inspect ───────────────────────────────────────────────────────────────────
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--config", "config_path", default=None, type=click.Path(),
+              help="Compare config — inspect only checks fields needed by active metrics.")
+def inspect(path: str, config_path: str | None):
+    """Inspect a trace file — show data coverage, available fields, and config suggestions.
+
+    \b
+    Examples:
+      kalibra inspect cached_sources/baseline.jsonl
+      kalibra inspect cached_sources/baseline.jsonl --config config/examples/ci-gate.yml
+    """
+    from kalibra.config import CompareConfig, resolve_metrics
+    from kalibra.converters.base import span_cost, span_input_tokens, span_output_tokens
+    from kalibra.converters.generic import load_json_traces
+    from kalibra.metrics import DEFAULT_METRICS
+
+    try:
+        traces = load_json_traces(Path(path))
+    except ValueError as exc:
+        click.echo(f"\nFailed to load: {exc}", err=True)
+        raise SystemExit(1) from None
+
+    n = len(traces)
+    if n == 0:
+        click.echo(f"\n  {path}: 0 traces (empty file)")
+        return
+
+    n_spans = sum(len(t.spans) for t in traces)
+
+    # Determine active metrics from config.
+    config = CompareConfig.load(config_path)
+    active = resolve_metrics(config, DEFAULT_METRICS)
+    active_names = {m.name for m in active}
+
+    # ── Collect data coverage ─────────────────────────────────────────────
+    has_outcome = sum(1 for t in traces if t.outcome in ("success", "failure"))
+    has_cost = sum(1 for t in traces if any(span_cost(s) > 0 for s in t.spans))
+    has_tokens = sum(
+        1 for t in traces
+        if any(span_input_tokens(s) > 0 or span_output_tokens(s) > 0 for s in t.spans)
+    )
+    has_duration = sum(1 for t in traces if t.duration > 0)
+
+    # Task ID matching: try the current task_id_field, then trace_id parsing.
+    from kalibra.metrics import _extract_task_id_from_trace
+    task_ids = set()
+    for t in traces:
+        tid = _extract_task_id_from_trace(t, config.task_id)
+        task_ids.add(tid)
+    # If every task_id equals the trace_id, no extraction happened — can't match.
+    all_raw_ids = task_ids == {t.trace_id for t in traces}
+    task_id_extractable = not all_raw_ids and len(task_ids) < n
+
+    # ── Collect metadata keys ─────────────────────────────────────────────
+    meta_keys: dict[str, int] = {}
+    meta_unique: dict[str, set] = {}
+    for t in traces:
+        for k, v in (t.metadata or {}).items():
+            meta_keys[k] = meta_keys.get(k, 0) + 1
+            meta_unique.setdefault(k, set()).add(str(v)[:100])
+
+    # ── Collect span attribute keys ───────────────────────────────────────
+    attr_keys: dict[str, int] = {}
+    for t in traces:
+        for s in t.spans:
+            for k in (s.attributes or {}):
+                attr_keys[k] = attr_keys.get(k, 0) + 1
+
+    # ── Render ────────────────────────────────────────────────────────────
+    bar = click.style("─" * 58, dim=True)
+    dot = click.style("·", dim=True)
+
+    click.echo()
+    click.echo(f"  {click.style('Kalibra Inspect', bold=True)}")
+    click.echo(f"  {bar}")
+    click.echo(f"  {click.style('Source', dim=True)}    {path}")
+    click.echo(f"  {click.style('Traces', dim=True)}    {n:,}")
+    click.echo(f"  {click.style('Spans', dim=True)}     {n_spans:,} ({n_spans / n:.1f} avg/trace)")
+    click.echo()
+
+    # ── Metric readiness ──────────────────────────────────────────────────
+    click.echo(f"  {click.style('Metric readiness', bold=True)}")
+    if config_path or config.metrics:
+        click.echo(f"  {click.style('(based on active config)', dim=True)}")
+    click.echo()
+
+    needs_outcome = active_names & {"success_rate", "per_task", "token_efficiency", "cost_quality"}
+    needs_cost = active_names & {"cost", "cost_quality"}
+    needs_tokens = active_names & {"token_usage", "token_efficiency"}
+    needs_duration = active_names & {"duration"}
+    needs_task_id = active_names & {"per_task"}
+
+    def _coverage_line(label: str, count: int, total: int, needed_by: set[str]):
+        if not needed_by:
+            return
+        ok = click.style("✓", fg="green") if count > 0 else click.style("✗", fg="yellow")
+        count_str = f"{count}/{total}"
+        metric_list = ", ".join(sorted(needed_by))
+        click.echo(
+            f"    {ok} {click.style(label, bold=True):<24s}"
+            f"{count_str:>8s} traces"
+            f"  {click.style(f'({metric_list})', dim=True)}"
+        )
+
+    _coverage_line("Outcome", has_outcome, n, needs_outcome)
+    _coverage_line("Cost", has_cost, n, needs_cost)
+    _coverage_line("Tokens", has_tokens, n, needs_tokens)
+    _coverage_line("Duration", has_duration, n, needs_duration)
+
+    if needs_task_id:
+        if task_id_extractable:
+            _coverage_line("Task ID", len(task_ids), n, {"per_task"})
+        else:
+            ok = click.style("✗", fg="yellow")
+            click.echo(
+                f"    {ok} {click.style('Task ID', bold=True):<24s}"
+                f"{'0/'+str(n):>8s} traces"
+                f"  {click.style('(per_task)', dim=True)}"
+            )
+            click.echo(
+                f"      {click.style('each trace has a unique ID — set fields.task_id in config', dim=True)}"
+            )
+
+    click.echo()
+
+    # ── Trace metadata keys ───────────────────────────────────────────────
+    click.echo(f"  {click.style('Trace metadata', bold=True)}")
+    click.echo()
+
+    if meta_keys:
+        for key in sorted(meta_keys, key=lambda k: -meta_keys[k]):
+            count = meta_keys[key]
+            n_unique = len(meta_unique.get(key, set()))
+            unique_str = f"{n_unique} unique" if n_unique > 1 else "1 value"
+            padding = max(1, 34 - len(key))
+            click.echo(
+                f"    {click.style(key, fg='white')}"
+                f"  {dot * padding}  "
+                f"{click.style(f'{count}/{n} traces, {unique_str}', dim=True)}"
+            )
+    else:
+        click.echo(f"    {click.style('(no metadata)', dim=True)}")
+
+    click.echo()
+
+    # ── Span attribute keys ───────────────────────────────────────────────
+    click.echo(f"  {click.style('Span attributes', bold=True)}")
+    click.echo()
+
+    if attr_keys:
+        for key in sorted(attr_keys, key=lambda k: -attr_keys[k]):
+            count = attr_keys[key]
+            padding = max(1, 34 - len(key))
+            click.echo(
+                f"    {click.style(key, fg='white')}"
+                f"  {dot * padding}  "
+                f"{click.style(f'{count}/{n_spans} spans', dim=True)}"
+            )
+    else:
+        click.echo(f"    {click.style('(no attributes)', dim=True)}")
+
+    click.echo()
+
+    # ── Config suggestions ────────────────────────────────────────────────
+    suggestions = []
+    if needs_task_id and not task_id_extractable:
+        suggestions.append("task_id: <metadata key>")
+    if needs_outcome and has_outcome == 0:
+        suggestions.append("outcome: <metadata key>")
+    if needs_cost and has_cost == 0:
+        suggestions.append("cost: <span attribute>")
+
+    if suggestions:
+        click.echo(f"  {bar}")
+        click.echo(f"  {click.style('To fix missing fields, add to', dim=True)} {click.style('kalibra.yml', fg='cyan')}{click.style(':', dim=True)}")
+        click.echo(click.style("    fields:", dim=True))
+        for s in suggestions:
+            click.echo(click.style(f"      {s}", dim=True))
+        click.echo()
+    else:
+        click.echo(f"  {bar}")
+        click.echo(f"  {click.style('All active metrics have data.', fg='green')}")
+        click.echo()
+
+
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 
