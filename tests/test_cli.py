@@ -497,7 +497,7 @@ def test_jsonl_source_config_parsing():
 def test_print_pull_summary_does_not_reread_file(runner, tmp_path, monkeypatch):
     """When traces are passed in-memory, _print_pull_summary does not re-read the file."""
     import json
-    from kalibra.cli import _print_pull_summary
+    from kalibra.display import pull_summary as _print_pull_summary
     from kalibra.converters.base import Trace, make_span
 
     spans = [make_span("a", "t1", "s1", None, 0, int(1e9), {})]
