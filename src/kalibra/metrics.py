@@ -283,12 +283,16 @@ class PerTaskMetric(ComparisonMetric):
         "improvements": "Number of improved tasks",
     }
 
+    def __init__(self):
+        self.task_id_field: str | None = None
+
     def summarize(self, col: TraceCollection) -> dict[str, str]:
         """Returns {task_id: outcome} for all traces with a known outcome."""
         outcomes: dict[str, str] = {}
         for t in col.all_traces():
             if t.outcome in ("success", "failure"):
-                outcomes.setdefault(_extract_task_id(t.trace_id), t.outcome)
+                task_id = _extract_task_id_from_trace(t, self.task_id_field)
+                outcomes.setdefault(task_id, t.outcome)
         return outcomes
 
     def compare(self, baseline: dict, current: dict) -> Observation:
@@ -1024,8 +1028,26 @@ def _trace_path(trace) -> str:
     return " -> ".join(s.name for s in sorted(trace.spans, key=lambda s: s.start_time))
 
 
+def _extract_task_id_from_trace(trace, task_id_field: str | None = None) -> str:
+    """Extract a stable task ID from a trace.
+
+    If ``task_id_field`` is set (from config), looks up that metadata field.
+    Otherwise falls back to parsing the trace_id string.
+    """
+    meta = trace.metadata or {}
+
+    # Explicit field from config — the user told us where to look.
+    if task_id_field:
+        val = meta.get(task_id_field)
+        if val:
+            return str(val)
+
+    # Fall back to trace_id parsing (strips __<model>__<index> suffixes).
+    return _extract_task_id(trace.trace_id)
+
+
 def _extract_task_id(trace_id: str) -> str:
-    """Extract a stable task ID from a trace ID.
+    """Extract a stable task ID from a trace ID string.
 
     Strips ``__<model>__<index>`` suffixes so that traces from different runs
     of the same task are matched together for per-task comparison.

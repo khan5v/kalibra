@@ -44,13 +44,15 @@ def main():
                    "For custom keywords, use a source config with outcome.success/failure lists.")
 @click.option("--cost-attr", default=None,
               help="Override cost from this span attribute (e.g. custom.cost_usd).")
+@click.option("--task-id", default=None,
+              help="Metadata field for per-task matching (e.g. braintrust.task_id).")
 @click.option("--metrics", "show_metrics", is_flag=True, default=False,
               help="List all available metrics and their --require threshold fields, then exit.")
 def compare(baseline: str, current: str, out_format: str, require: tuple,
             config_path: str | None, sources_dir: str | None, output: str | None,
             refresh: bool, cache_dir: str,
             outcome_field: str | None, cost_attr: str | None,
-            show_metrics: bool):
+            task_id: str | None, show_metrics: bool):
     """Compare two trace datasets — regression detection, statistical diff.
 
     \b
@@ -94,6 +96,8 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
             raise click.UsageError(f"Sources path is not a directory: {sources_dir}")
 
     config = CompareConfig.load(config_path)
+    if task_id:
+        config.task_id = task_id
 
     # Validate threshold expressions early — before loading any data.
     from kalibra.compare import ThresholdError, validate_require_exprs
@@ -182,7 +186,7 @@ def compare(baseline: str, current: str, out_format: str, require: tuple,
 @main.command()
 @click.argument("name", required=False, default=None,
                 metavar="[@NAME]")
-@click.option("--source", type=click.Choice(["langfuse", "langsmith"]),
+@click.option("--source", type=click.Choice(["langfuse", "langsmith", "braintrust"]),
               help="Trace store to pull from.")
 @click.option("--project",
               help="Project name (Langfuse project_id or LangSmith project name).")

@@ -175,10 +175,12 @@ def compare_collections(
     threshold_values: dict[str, float] = {}
 
     for m in active:
-        # Apply per-metric noise threshold override from config.
+        # Apply per-metric config overrides.
         noise = config.noise_thresholds.get(m.name)
         if noise is not None:
-            m.noise_threshold = noise  # instance-level override
+            m.noise_threshold = noise
+        if hasattr(m, "task_id_field") and config.task_id:
+            m.task_id_field = config.task_id
 
         b_summary = m.summarize(baseline)
         c_summary = m.summarize(current)

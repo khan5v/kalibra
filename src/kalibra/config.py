@@ -149,11 +149,16 @@ class CompareConfig:
         noise_thresholds:  Per-metric noise threshold overrides. Keyed by metric name.
                            E.g. ``{"success_rate": 1.0, "cost": 5.0}``.
                            Overrides the class-level default for that metric.
+        task_id:           Metadata field that identifies the task for per-task matching.
+                           Dot-path into trace metadata, e.g. ``"braintrust.task_id"``
+                           or ``"langfuse.instance_id"``. If not set, falls back to
+                           parsing the trace_id string.
     """
 
     metrics: list[str] | None = None
     require: list[str] = dc_field(default_factory=list)
     noise_thresholds: dict[str, float] = dc_field(default_factory=dict)
+    task_id: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "CompareConfig":
@@ -162,6 +167,7 @@ class CompareConfig:
             metrics=data.get("metrics") or None,
             require=[r for r in (data.get("require") or []) if r],
             noise_thresholds={k: float(v) for k, v in raw_noise.items()},
+            task_id=data.get("task_id") or None,
         )
 
     @classmethod

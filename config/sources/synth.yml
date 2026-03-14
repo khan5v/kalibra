@@ -8,7 +8,7 @@
 #   kalibra pull @current --refresh          # force re-pull, bypass cache
 #
 # Fields per source:
-#   source:   langfuse | langsmith
+#   source:   langfuse | langsmith | braintrust
 #   project:  project name / ID in the trace store
 #   since:    7d, 24h, 30m, or ISO date (2026-01-01)
 #   limit:    max traces to fetch (default: 5000)
@@ -18,8 +18,9 @@
 # Cache: always written to cached_sources/<name>.jsonl
 #
 # Environment variables:
-#   Langfuse:   LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
-#   LangSmith:  LANGSMITH_API_KEY
+#   Langfuse:    LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
+#   LangSmith:   LANGSMITH_API_KEY
+#   Braintrust:  BRAINTRUST_API_KEY
 
 baseline:
   source: langfuse

@@ -669,6 +669,106 @@ def send_langsmith(mode: str, cfg: dict, paths: dict, rng: random.Random, projec
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Braintrust backend
+# ═══════════════════════════════════════════════════════════════════════════════
+
+BRAINTRUST_API_KEY = os.getenv("BRAINTRUST_API_KEY", "")
+BRAINTRUST_PROJECT = os.getenv("BRAINTRUST_PROJECT", "synth")
+
+
+def send_braintrust_trace(project_logger, trace_data: dict, tags: list[str] | None = None) -> None:
+    """Upload one trace to Braintrust using the SDK."""
+    mode = trace_data["mode"]
+    run_tags = tags or ["kalibra", mode]
+
+    # Build realistic timestamps from step durations.
+    trace_start = time.time() - 3600  # offset into the past to avoid clock issues
+    t = trace_start
+
+    step_times = []
+    for step in trace_data["steps"]:
+        step_start = t
+        t += step["duration"]
+        step_times.append((step_start, t))
+    trace_end = t
+
+    root_span = project_logger.start_span(
+        name="agent-run",
+        span_attributes={"type": "task"},
+    )
+    root_span.log(
+        input={"task_id": trace_data["task_id"], "path": trace_data["path_name"]},
+        output={"outcome": "success" if trace_data["success"] else "failure"},
+        scores={"Correctness": 1.0 if trace_data["success"] else 0.0},
+        tags=run_tags,
+        metadata={
+            "seed_mode": mode,
+            "task_id": trace_data["task_id"],
+            "trace_name": trace_data["trace_name"],
+            "model": "claude-sonnet-4-20250514",
+        },
+        metrics={"start": trace_start, "end": trace_end},
+    )
+
+    for step, (step_start, step_end) in zip(trace_data["steps"], step_times):
+        child = root_span.start_span(
+            name=step["name"],
+            span_attributes={"type": "llm" if step["model"] else "tool"},
+        )
+        child.log(
+            input={"step": step["name"]},
+            output={"result": f"{step['name']} completed"},
+            metadata={"model": step["model"]} if step["model"] else {},
+            metrics={
+                "start": step_start,
+                "end": step_end,
+                "prompt_tokens": step["input_tokens"],
+                "completion_tokens": step["output_tokens"],
+                "estimated_cost": step["cost"],
+            },
+        )
+        if step["is_error"]:
+            child.log(error=f"Tool call failed: {step['name']} returned non-zero exit code")
+        child.end()
+
+    if not trace_data["success"]:
+        root_span.log(error="Agent failed to solve the task")
+    root_span.end()
+
+
+def send_braintrust(mode: str, cfg: dict, paths: dict, rng: random.Random, project: str,
+                     count: int | None = None, tags: list[str] | None = None) -> None:
+    if not BRAINTRUST_API_KEY:
+        raise SystemExit(
+            "Set BRAINTRUST_API_KEY environment variable.\n"
+            "  export BRAINTRUST_API_KEY=sk-..."
+        )
+
+    import braintrust
+    braintrust.login(api_key=BRAINTRUST_API_KEY)
+    project_logger = braintrust.init(project=project)
+
+    n = count or cfg["n_traces"]
+    tags = tags or ["kalibra", mode]
+    run_id = uuid.uuid4().hex[:8]
+    print(f"Sending {n} {mode} traces to Braintrust...")
+    print(f"  Project: {project}")
+    print(f"  Tags: {tags}")
+    print(f"  Run ID: {run_id}")
+    print()
+
+    for i in range(n):
+        task_id = TASK_POOL[i % len(TASK_POOL)]
+        trace_data = generate_trace_data(mode, cfg, paths, task_id, i, rng, run_id=run_id)
+        send_braintrust_trace(project_logger, trace_data, tags=tags)
+        if (i + 1) % 5 == 0 or i == n - 1:
+            print(f"  {i + 1}/{n} traces sent...")
+
+    project_logger.flush()
+    print(f"\nDone. {n} {mode} traces uploaded to Braintrust (project: {project}).")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # CLI
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -688,6 +788,10 @@ def send_traces(mode: str, target: str, project: str | None = None,
     if target == "langfuse":
         send_langfuse(mode, cfg, paths, rng, count=count, tags=tags)
         source_name = "baseline" if mode == "baseline" else "current"
+    elif target == "braintrust":
+        bt_project = project or BRAINTRUST_PROJECT
+        send_braintrust(mode, cfg, paths, rng, bt_project, count=count, tags=tags)
+        source_name = "bt-baseline" if mode == "baseline" else "bt-current"
     else:
         ls_project = project or LANGSMITH_PROJECT
         send_langsmith(mode, cfg, paths, rng, ls_project, count=count, tags=tags)
@@ -714,12 +818,12 @@ def main() -> None:
         help="Which batch to send. Run baseline first, pull, then current.",
     )
     parser.add_argument(
-        "--target", choices=["langfuse", "langsmith"], default="langfuse",
+        "--target", choices=["langfuse", "langsmith", "braintrust"], default="langfuse",
         help="Where to send traces (default: langfuse).",
     )
     parser.add_argument(
         "--project", default=None,
-        help="LangSmith project name (default: LANGSMITH_PROJECT env or 'kalibra-synth').",
+        help="Project name for LangSmith or Braintrust (default: env var or 'synth').",
     )
     parser.add_argument(
         "--count", type=int, default=None,

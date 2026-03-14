@@ -31,4 +31,15 @@ def get_connector(source: str):
         api_url = os.environ.get("LANGSMITH_API_URL") or None
         return LangSmithConnector(api_key=api_key, api_url=api_url)
 
-    raise ValueError(f"Unknown source: {source!r}. Supported: langfuse, langsmith")
+    if source == "braintrust":
+        from kalibra.connectors.braintrust import BraintrustConnector
+        api_key = os.environ.get("BRAINTRUST_API_KEY", "")
+        if not api_key:
+            raise RuntimeError(
+                "Missing Braintrust credentials.\n"
+                "  export BRAINTRUST_API_KEY=sk-..."
+            )
+        api_url = os.environ.get("BRAINTRUST_API_URL", "https://api.braintrust.dev")
+        return BraintrustConnector(api_key=api_key, api_url=api_url)
+
+    raise ValueError(f"Unknown source: {source!r}. Supported: langfuse, langsmith, braintrust")
