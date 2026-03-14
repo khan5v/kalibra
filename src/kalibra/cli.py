@@ -190,22 +190,6 @@ def pull(name, source, project, since, limit, output, tags, session, sources_dir
                 tags=list(tags), session_id=session)
 
 
-# ── validate ──────────────────────────────────────────────────────────────────
-
-@main.command()
-@click.argument("path", type=click.Path())
-def validate(path):
-    """Validate a JSONL trace file and show summary statistics.
-
-    \b
-    Examples:
-      kalibra validate traces.jsonl
-      kalibra validate cached_sources/baseline.jsonl
-    """
-    from kalibra.commands.validate import run_validate
-    run_validate(path)
-
-
 # ── inspect ───────────────────────────────────────────────────────────────────
 
 @main.command()
