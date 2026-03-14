@@ -24,7 +24,7 @@ def _find_config() -> Path | None:
         current = parent
 
 
-def _pull_population(pop, name: str, cache_dir: str) -> str:
+def _pull_population(pop, name: str, cache_dir: str, refresh: bool = False) -> str:
     """Pull traces for a population config and return the local file path."""
     if pop.path:
         return pop.path
@@ -40,7 +40,7 @@ def _pull_population(pop, name: str, cache_dir: str) -> str:
     cache_name = f"{pop.project}_{tag_slug}".replace("/", "_").replace(" ", "_")
     dest = cache_path(cache_name, cache_dir=cache_dir)
 
-    if not dest.exists():
+    if refresh or not dest.exists():
         do_pull(
             source=pop.source,
             project=pop.project,
@@ -118,7 +118,7 @@ def run_compare(
             # Check if it's a named source from config.
             named = config.get_source(flag_value)
             if named:
-                return _pull_population(named, label, cache_dir)
+                return _pull_population(named, label, cache_dir, refresh)
             # Legacy @name syntax.
             if flag_value.startswith("@"):
                 from kalibra.commands.pull import resolve_source
@@ -127,7 +127,7 @@ def run_compare(
             # Treat as file path.
             return flag_value
         if config_pop:
-            return _pull_population(config_pop, label, cache_dir)
+            return _pull_population(config_pop, label, cache_dir, refresh)
         return None
 
     baseline_path = _resolve_flag_or_config(baseline, config.baseline, "baseline")
