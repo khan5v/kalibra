@@ -1,36 +1,81 @@
-"""Compare configuration — metric selection, thresholds, and plugin loading."""
+"""Kalibra configuration — unified config from kalibra.yml."""
 
 from __future__ import annotations
 
 import importlib
 import sys
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from pathlib import Path
 
-# Auto-discovered in cwd if present (no config entry needed).
 _AUTO_PLUGIN_FILE = "kalibra_metrics.py"
-_CONFIG_FILE = "config/compare.yml"
-_SOURCES_DIR = "config/sources"
-_CACHE_DIR = "cached_sources"
+_LEGACY_CONFIG_FILE = "config/compare.yml"
+_LEGACY_SOURCES_DIR = "config/sources"
 
+
+# ── Population config (baseline / current) ────────────────────────────────────
+
+@dataclass
+class PopulationConfig:
+    """Where to get traces for one side of the comparison.
+
+    Either ``path`` (local JSONL) or ``source`` + ``project`` (remote pull).
+    """
+
+    # Local file path — if set, no remote pull needed.
+    path: str | None = None
+
+    # Remote source — langfuse, langsmith, braintrust.
+    source: str | None = None
+    project: str | None = None
+    since: str = "7d"
+    limit: int = 5000
+    tags: list[str] = dc_field(default_factory=list)
+    session: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> PopulationConfig | None:
+        if data is None or not isinstance(data, dict):
+            return None
+        raw_tags = data.get("tags") or []
+        if isinstance(raw_tags, str):
+            raw_tags = [raw_tags]
+        return cls(
+            path=data.get("path"),
+            source=data.get("source"),
+            project=data.get("project"),
+            since=str(data.get("since", "7d")),
+            limit=int(data.get("limit", 5000)),
+            tags=[str(t) for t in raw_tags],
+            session=data.get("session"),
+        )
+
+
+# ── Field mappings ────────────────────────────────────────────────────────────
+
+@dataclass
+class FieldsConfig:
+    """Maps trace/span fields to what Kalibra metrics expect."""
+
+    task_id: str | None = None
+    outcome: str | None = None
+    cost: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> FieldsConfig:
+        if not data or not isinstance(data, dict):
+            return cls()
+        return cls(
+            task_id=data.get("task_id"),
+            outcome=data.get("outcome"),
+            cost=data.get("cost"),
+        )
+
+
+# ── Outcome / cost overrides (legacy, still used by connectors) ──────────────
 
 @dataclass
 class OutcomeConfig:
-    """Override outcome detection for a source.
-
-    Looks up ``field`` in trace metadata and matches the value against
-    ``success`` / ``failure`` keyword lists.  If the field is missing or
-    the value doesn't match either list, the connector's default heuristic
-    is kept.
-
-    Example YAML::
-
-        outcome:
-          field: metadata.evaluation_result
-          success: [pass, resolved]
-          failure: [fail, timeout]
-    """
-
     field: str | None = None
     success: list[str] = dc_field(default_factory=lambda: ["success"])
     failure: list[str] = dc_field(default_factory=lambda: ["failure", "error", "failed"])
@@ -48,14 +93,6 @@ class OutcomeConfig:
 
 @dataclass
 class CostConfig:
-    """Override which span attribute is used for cost.
-
-    Example YAML::
-
-        cost:
-          attr: custom.cost_usd
-    """
-
     attr: str | None = None
 
     @classmethod
@@ -67,17 +104,7 @@ class CostConfig:
 
 @dataclass
 class SourceConfig:
-    """Named pull configuration, referenced as ``@name`` in compare/pull commands.
-
-    Attributes:
-        source:  Connector to use — ``"langfuse"``, ``"langsmith"``, or ``"jsonl"``.
-        project: Project name or ID in the trace store (not used for jsonl).
-        path:    Local file path (required for ``source: jsonl``).
-        since:   Time window to fetch — e.g. ``"7d"``, ``"24h"``, ``"2026-01-01"``.
-        limit:   Max traces to fetch (default 5000).
-        outcome: Override outcome detection (see ``OutcomeConfig``).
-        cost:    Override cost computation (see ``CostConfig``).
-    """
+    """Legacy named source config (from config/sources/*.yml)."""
 
     source: str
     project: str = ""
@@ -90,7 +117,7 @@ class SourceConfig:
     cost: CostConfig | None = None
 
     @classmethod
-    def from_dict(cls, data: dict) -> "SourceConfig":
+    def from_dict(cls, data: dict) -> SourceConfig:
         source = data.get("source", "")
         if source == "jsonl" and "path" not in data:
             raise ValueError("JSONL source requires a 'path' field")
@@ -113,14 +140,10 @@ class SourceConfig:
 
 
 def load_sources(directory: str | None = None) -> dict[str, SourceConfig]:
-    """Load named pull configs from all ``*.yml`` files in ``config/sources/``.
-
-    Files are merged in alphabetical order; later files override earlier ones
-    for the same name. Returns an empty dict if the directory does not exist.
-    """
+    """Load legacy named sources from config/sources/*.yml."""
     import yaml
 
-    d = Path(directory) if directory else Path(_SOURCES_DIR)
+    d = Path(directory) if directory else Path(_LEGACY_SOURCES_DIR)
     if not d.is_dir():
         return {}
     result: dict[str, SourceConfig] = {}
@@ -133,72 +156,126 @@ def load_sources(directory: str | None = None) -> dict[str, SourceConfig]:
     return result
 
 
+def _resolve_population(
+    value: dict | str | None,
+    sources: dict[str, PopulationConfig],
+) -> PopulationConfig | None:
+    """Resolve a baseline/current value — inline dict or string source reference."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        # String reference to a named source.
+        if value in sources:
+            return sources[value]
+        raise ValueError(
+            f"Unknown source {value!r} in baseline/current. "
+            f"Available sources: {list(sources)}"
+        )
+    if isinstance(value, dict):
+        return PopulationConfig.from_dict(value)
+    return None
+
+
+# ── Main config ───────────────────────────────────────────────────────────────
+
 @dataclass
 class CompareConfig:
-    """Controls which metrics run and what threshold gates are applied.
+    """Unified Kalibra configuration — parsed from kalibra.yml.
 
-    Attributes:
-        metrics:           Metric names or dotted module paths to load. ``None`` runs all
-                           DEFAULT_METRICS plus any auto-discovered plugins.
-                           Built-in names: ``"success_rate"``, ``"cost"``, etc.
-                           Dotted paths: ``"myproject.custom_metrics"`` — module is
-                           imported and its ``METRICS: list[ComparisonMetric]`` is run.
-        require:           Threshold expressions evaluated after comparison.
-                           Each is a string like ``"success_rate_delta >= -2"``.
-                           The compare command exits with code 1 if any expression fails.
-        noise_thresholds:  Per-metric noise threshold overrides. Keyed by metric name.
-                           E.g. ``{"success_rate": 1.0, "cost": 5.0}``.
-                           Overrides the class-level default for that metric.
-        task_id:           Metadata field that identifies the task for per-task matching.
-                           Dot-path into trace metadata, e.g. ``"braintrust.task_id"``
-                           or ``"langfuse.instance_id"``. If not set, falls back to
-                           parsing the trace_id string.
+    Holds everything: named sources, population selection, metrics, gates,
+    and field mappings.
     """
 
+    # Named sources — reusable definitions referenced by baseline/current.
+    sources: dict[str, PopulationConfig] = dc_field(default_factory=dict)
+
+    # Population configs — inline or string reference to a named source.
+    baseline: PopulationConfig | None = None
+    current: PopulationConfig | None = None
+
+    # Field mappings
+    fields: FieldsConfig = dc_field(default_factory=FieldsConfig)
+
+    # Metric selection (None = all built-ins)
     metrics: list[str] | None = None
+
+    # Quality gates
     require: list[str] = dc_field(default_factory=list)
+
+    # Per-metric noise threshold overrides
     noise_thresholds: dict[str, float] = dc_field(default_factory=dict)
-    task_id: str | None = None
+
+    @property
+    def task_id(self) -> str | None:
+        return self.fields.task_id
+
+    @task_id.setter
+    def task_id(self, value: str | None) -> None:
+        self.fields.task_id = value
 
     @classmethod
-    def from_dict(cls, data: dict) -> "CompareConfig":
+    def from_dict(cls, data: dict) -> CompareConfig:
         raw_noise = data.get("noise_thresholds") or {}
+        fields_data = data.get("fields") or {}
+        if not fields_data.get("task_id") and data.get("task_id"):
+            fields_data["task_id"] = data["task_id"]
+
+        # Parse named sources.
+        sources: dict[str, PopulationConfig] = {}
+        for name, src_data in (data.get("sources") or {}).items():
+            if isinstance(src_data, dict):
+                pop = PopulationConfig.from_dict(src_data)
+                if pop:
+                    sources[name] = pop
+
+        # Parse baseline/current — can be inline dict or string reference.
+        baseline = _resolve_population(data.get("baseline"), sources)
+        current = _resolve_population(data.get("current"), sources)
+
         return cls(
+            sources=sources,
+            baseline=baseline,
+            current=current,
+            fields=FieldsConfig.from_dict(fields_data),
             metrics=data.get("metrics") or None,
             require=[r for r in (data.get("require") or []) if r],
             noise_thresholds={k: float(v) for k, v in raw_noise.items()},
-            task_id=data.get("task_id") or None,
         )
 
-    @classmethod
-    def load(cls, path: str | None = None) -> "CompareConfig":
-        """Load from ``config/compare.yml`` (or *path*).
+    def get_source(self, name: str) -> PopulationConfig | None:
+        """Look up a named source."""
+        return self.sources.get(name)
 
-        Returns an empty (all-defaults) config if the file does not exist.
+    @classmethod
+    def load(cls, path: str | None = None) -> CompareConfig:
+        """Load config from a file.
+
+        Tries ``path`` first, then falls back to the legacy ``config/compare.yml``.
+        Returns an empty config if no file is found.
         """
         import yaml
 
-        p = Path(path) if path else Path(_CONFIG_FILE)
-        if not p.exists():
-            return cls()
-        with p.open() as f:
-            data = yaml.safe_load(f) or {}
-        return cls.from_dict(data)
+        if path:
+            p = Path(path)
+            if p.exists():
+                with p.open() as f:
+                    data = yaml.safe_load(f) or {}
+                return cls.from_dict(data)
 
+        # Legacy fallback.
+        legacy = Path(_LEGACY_CONFIG_FILE)
+        if legacy.exists():
+            with legacy.open() as f:
+                data = yaml.safe_load(f) or {}
+            return cls.from_dict(data)
+
+        return cls()
+
+
+# ── Metric resolution ─────────────────────────────────────────────────────────
 
 def resolve_metrics(config: CompareConfig, defaults: list) -> list:
-    """Return the active metric list for a comparison run.
-
-    Resolution order:
-    1. If ``config.metrics`` is ``None``, all ``defaults`` are used.
-    2. Otherwise each entry in ``config.metrics`` is resolved:
-       - Known built-in name → the corresponding default metric instance.
-       - Dotted path (e.g. ``"myproject.custom"```) → module is imported and
-         its ``METRICS: list[ComparisonMetric]`` is appended.
-       - Unknown string with no dot → silently skipped.
-    3. ``kalibra_metrics.py`` in the current directory is always auto-loaded
-       if it exists (zero-config extension point, like pytest's conftest.py).
-    """
+    """Return the active metric list for a comparison run."""
     auto_extras = _load_auto_plugin()
 
     if config.metrics is None:
@@ -211,7 +288,6 @@ def resolve_metrics(config: CompareConfig, defaults: list) -> list:
             active.append(by_name[entry])
         elif "." in entry:
             active.extend(_load_module_metrics(entry))
-        # unknown bare name: skip silently
     active.extend(auto_extras)
     return active
 
@@ -226,7 +302,9 @@ def _load_auto_plugin() -> list:
     try:
         mod = importlib.import_module(auto.stem)
     except ImportError as e:
-        raise ImportError(f"Auto-plugin {_AUTO_PLUGIN_FILE!r} could not be imported: {e}") from e
+        raise ImportError(
+            f"Auto-plugin {_AUTO_PLUGIN_FILE!r} could not be imported: {e}"
+        ) from e
     return list(getattr(mod, "METRICS", []))
 
 
@@ -234,5 +312,7 @@ def _load_module_metrics(dotted: str) -> list:
     try:
         mod = importlib.import_module(dotted)
     except ImportError as e:
-        raise ImportError(f"Plugin module {dotted!r} could not be imported: {e}") from e
+        raise ImportError(
+            f"Plugin module {dotted!r} could not be imported: {e}"
+        ) from e
     return list(getattr(mod, "METRICS", []))

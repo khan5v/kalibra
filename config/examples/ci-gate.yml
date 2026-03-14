@@ -1,11 +1,9 @@
 # CI quality gate — block merges when the agent regresses.
 #
-# Usage:
-#   kalibra compare --baseline @baseline --current @current \
-#     --config config/examples/ci-gate.yml
+# Copy the metrics/require sections into your kalibra.yml, or use directly:
+#   kalibra compare --config config/examples/ci-gate.yml
 #
-# Designed for GitHub Actions / CI pipelines. Exits with code 1
-# on any threshold violation, so a failing gate blocks the PR.
+# Exits with code 1 on any threshold violation.
 
 metrics:
   - success_rate

@@ -14,6 +14,23 @@ def main():
     """Kalibra — agent evaluation and regression detection."""
 
 
+# ── init ───────────────────────────────────────────────────────────────────────
+
+@main.command()
+@click.option("--force", is_flag=True, default=False,
+              help="Overwrite existing kalibra.yml without asking.")
+def init(force):
+    """Create a kalibra.yml config file interactively.
+
+    \b
+    Examples:
+      kalibra init
+      kalibra init --force
+    """
+    from kalibra.commands.init import run_init
+    run_init(force=force)
+
+
 # ── compare ────────────────────────────────────────────────────────────────────
 
 @main.command()
@@ -63,9 +80,6 @@ def compare(baseline, current, out_format, require, config_path, sources_dir,
         display.metrics_list()
         return
 
-    if not baseline or not current:
-        raise click.UsageError("--baseline and --current are required (unless using --metrics).")
-
     from kalibra.commands.compare import run_compare
     run_compare(
         baseline=baseline, current=current, out_format=out_format,
@@ -105,36 +119,65 @@ def pull(name, source, project, since, limit, output, tags, session, sources_dir
     """
     from pathlib import Path
 
+    from kalibra.commands.compare import _find_config
     from kalibra.commands.pull import cache_path, do_pull
-    from kalibra.config import load_sources
-
-    sources_map = load_sources(sources_dir)
+    from kalibra.config import CompareConfig, load_sources
 
     if name:
         if not name.startswith("@"):
             raise click.UsageError(f"Positional NAME must start with @, got: {name!r}")
         src_name = name[1:]
-        if src_name not in sources_map:
-            available = list(sources_map)
+
+        # Look up in kalibra.yml sources first, then legacy config/sources/.
+        pop = None
+        kalibra_yml = _find_config()
+        if kalibra_yml:
+            cfg = CompareConfig.load(str(kalibra_yml))
+            pop = cfg.get_source(src_name)
+
+        if pop is None:
+            # Fall back to legacy sources.
+            legacy = load_sources(sources_dir)
+            if src_name in legacy:
+                src = legacy[src_name]
+                dest = output or str(cache_path(src_name, cache_dir=cache_dir))
+                cache = Path(dest)
+                if not refresh and cache.exists():
+                    click.echo(f"Using cached data: {dest}  (use --refresh to re-pull)")
+                    display.pull_summary(dest)
+                    return
+                do_pull(src.source, src.project, src.since, src.limit, dest,
+                        tags=list(tags) or src.tags,
+                        session_id=session or src.session,
+                        source_config=src)
+                return
+
+            # Build available list from both.
+            available = list((cfg.sources if kalibra_yml and cfg else {}).keys())
+            available += list(legacy.keys())
             raise click.UsageError(
                 f"Source '@{src_name}' not found.\n"
                 f"  Available: {available or '(none defined)'}\n\n"
-                f"  Define sources in config/sources/*.yml, or use explicit flags:\n"
+                f"  Define sources in kalibra.yml, or use explicit flags:\n"
                 f"    kalibra pull --source langfuse --project my-agent --since 7d"
             )
-        src = sources_map[src_name]
-        dest = output or str(cache_path(src_name, cache_dir=cache_dir))
 
+        # Pull from kalibra.yml source.
+        if not pop.source or not pop.project:
+            raise click.UsageError(
+                f"Source '@{src_name}' needs 'source' and 'project' fields."
+            )
+        dest = output or str(cache_path(src_name, cache_dir=cache_dir))
         cache = Path(dest)
         if not refresh and cache.exists():
             click.echo(f"Using cached data: {dest}  (use --refresh to re-pull)")
             display.pull_summary(dest)
             return
 
-        effective_tags = list(tags) or src.tags
-        effective_session = session or src.session
-        do_pull(src.source, src.project, src.since, src.limit, dest,
-                tags=effective_tags, session_id=effective_session, source_config=src)
+        effective_tags = list(tags) or pop.tags
+        effective_session = session or pop.session
+        do_pull(pop.source, pop.project, pop.since, pop.limit, dest,
+                tags=effective_tags, session_id=effective_session)
     else:
         if not source or not project:
             raise click.UsageError(
