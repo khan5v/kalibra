@@ -13,44 +13,6 @@ _LEGACY_CONFIG_FILE = "config/compare.yml"
 _LEGACY_SOURCES_DIR = "config/sources"
 
 
-# ── Population config (baseline / current) ────────────────────────────────────
-
-@dataclass
-class PopulationConfig:
-    """Where to get traces for one side of the comparison.
-
-    Either ``path`` (local JSONL) or ``source`` + ``project`` (remote pull).
-    """
-
-    # Local file path — if set, no remote pull needed.
-    path: str | None = None
-
-    # Remote source — langfuse, langsmith, braintrust.
-    source: str | None = None
-    project: str | None = None
-    since: str = "7d"
-    limit: int = 5000
-    tags: list[str] = dc_field(default_factory=list)
-    session: str | None = None
-
-    @classmethod
-    def from_dict(cls, data: dict | None) -> PopulationConfig | None:
-        if data is None or not isinstance(data, dict):
-            return None
-        raw_tags = data.get("tags") or []
-        if isinstance(raw_tags, str):
-            raw_tags = [raw_tags]
-        return cls(
-            path=data.get("path"),
-            source=data.get("source"),
-            project=data.get("project"),
-            since=str(data.get("since", "7d")),
-            limit=int(data.get("limit", 5000)),
-            tags=[str(t) for t in raw_tags],
-            session=data.get("session"),
-        )
-
-
 # ── Field mappings ────────────────────────────────────────────────────────────
 
 @dataclass
@@ -75,6 +37,63 @@ class FieldsConfig:
             cost=data.get("cost"),
             input_tokens=data.get("input_tokens"),
             output_tokens=data.get("output_tokens"),
+        )
+
+    def merge(self, override: FieldsConfig | None) -> FieldsConfig:
+        """Return a new FieldsConfig with non-None values from override winning."""
+        if override is None:
+            return self
+        return FieldsConfig(
+            trace_id=override.trace_id or self.trace_id,
+            task_id=override.task_id or self.task_id,
+            outcome=override.outcome or self.outcome,
+            cost=override.cost or self.cost,
+            input_tokens=override.input_tokens or self.input_tokens,
+            output_tokens=override.output_tokens or self.output_tokens,
+        )
+
+
+# ── Population config (baseline / current) ────────────────────────────────────
+
+@dataclass
+class PopulationConfig:
+    """Where to get traces for one side of the comparison.
+
+    Either ``path`` (local JSONL) or ``source`` + ``project`` (remote pull).
+    Optionally carries its own ``fields`` overrides.
+    """
+
+    # Local file path — if set, no remote pull needed.
+    path: str | None = None
+
+    # Remote source — langfuse, langsmith, braintrust.
+    source: str | None = None
+    project: str | None = None
+    since: str = "7d"
+    limit: int = 5000
+    tags: list[str] = dc_field(default_factory=list)
+    session: str | None = None
+
+    # Per-source field overrides (None = use global fields).
+    fields: FieldsConfig | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> PopulationConfig | None:
+        if data is None or not isinstance(data, dict):
+            return None
+        raw_tags = data.get("tags") or []
+        if isinstance(raw_tags, str):
+            raw_tags = [raw_tags]
+        fields_data = data.get("fields")
+        return cls(
+            path=data.get("path"),
+            source=data.get("source"),
+            project=data.get("project"),
+            since=str(data.get("since", "7d")),
+            limit=int(data.get("limit", 5000)),
+            tags=[str(t) for t in raw_tags],
+            session=data.get("session"),
+            fields=FieldsConfig.from_dict(fields_data) if fields_data else None,
         )
 
 

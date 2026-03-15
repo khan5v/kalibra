@@ -15,6 +15,7 @@ docs/
 landing/
 cached_sources/*
 data/
+config/showcase/
 .DS_Store
 *.jsonl
 !examples/*.jsonl

@@ -18,18 +18,20 @@ from kalibra.converters.base import (
 CONFIG_FILENAME = "kalibra.yml"
 
 
-def _apply_field_overrides(traces: list, config) -> None:
-    """Apply field mappings from config to traces.
+def _apply_field_overrides(traces: list, fields) -> None:
+    """Apply field mappings to traces.
 
     Maps user-specified field names to Kalibra's standard attribute keys
     (kalibra.cost, gen_ai.usage.input_tokens, etc.). Also applies outcome
     override via the existing apply_overrides mechanism.
+
+    Args:
+        traces: List of Trace objects to modify in place.
+        fields: FieldsConfig with the resolved field mappings for this source.
     """
     from kalibra.converters.base import apply_overrides, make_span
     from kalibra.config import CostConfig, OutcomeConfig, SourceConfig
     from opentelemetry.sdk.trace import StatusCode
-
-    fields = config.fields
 
     # Cost and outcome via existing override mechanism (metadata + span attrs).
     if fields.outcome or fields.cost:
@@ -241,25 +243,37 @@ def run_compare(
         ctx.exit(2)
 
     # ── Load traces ───────────────────────────────────────────────────────
+    # Resolve per-source fields: global fields merged with per-population overrides.
     from kalibra.collection import TraceCollection
     from kalibra.converters import load_traces
-    from kalibra.converters.base import apply_overrides
 
-    trace_id_field = config.fields.trace_id
+    b_pop = config.baseline
+    c_pop = config.current
+    b_fields = config.fields.merge(b_pop.fields if b_pop else None)
+    c_fields = config.fields.merge(c_pop.fields if c_pop else None)
 
     try:
         click.echo(f"Loading {baseline_path}")
-        b_traces = load_traces(baseline_path, trace_id_field=trace_id_field)
+        b_traces = load_traces(
+            baseline_path, trace_id_field=b_fields.trace_id,
+        )
 
         click.echo(f"Loading {current_path}")
-        c_traces = load_traces(current_path, trace_id_field=trace_id_field)
+        c_traces = load_traces(
+            current_path, trace_id_field=c_fields.trace_id,
+        )
     except ValueError as exc:
         display.load_error(baseline_path, str(exc))
         raise SystemExit(1) from None
 
-    # Apply field overrides from config (outcome, cost, tokens).
-    _apply_field_overrides(b_traces, config)
-    _apply_field_overrides(c_traces, config)
+    # Apply field overrides per source (outcome, cost, tokens).
+    _apply_field_overrides(b_traces, b_fields)
+    _apply_field_overrides(c_traces, c_fields)
+
+    # Resolve task_id for per-task matching — use per-source if set.
+    config.fields.task_id = (
+        b_fields.task_id or c_fields.task_id or config.fields.task_id
+    )
 
     baseline_col = TraceCollection.from_traces(b_traces, source=baseline_path)
     current_col = TraceCollection.from_traces(c_traces, source=current_path)
