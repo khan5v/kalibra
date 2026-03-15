@@ -48,13 +48,24 @@ def run_inspect(path: str, config_path: str | None) -> None:
     has_tokens = sum(1 for t in traces if t.total_tokens > 0)
     has_duration = sum(1 for t in traces if t.duration > 0)
 
-    # Task ID: check if extraction produces something matchable.
+    # Task ID: check if traces can be grouped into tasks.
+    # A task_id is "extractable" if either metadata has a task_id field,
+    # or trace IDs share prefixes (e.g. "task-1__model__0", "task-1__model__1").
     task_ids = set()
+    has_metadata_task_id = False
     for t in traces:
-        tid = t.metadata.get("task_id", t.trace_id)
-        task_ids.add(tid)
-    all_raw_ids = task_ids == {t.trace_id for t in traces}
-    task_id_extractable = not all_raw_ids and len(task_ids) < n
+        mid = t.metadata.get("task_id")
+        if mid is not None:
+            task_ids.add(str(mid))
+            has_metadata_task_id = True
+        else:
+            # Try prefix extraction (strip __model__index suffix).
+            parts = t.trace_id.split("__")
+            if len(parts) >= 3 and parts[-1].isdigit():
+                task_ids.add("__".join(parts[:-2]))
+            else:
+                task_ids.add(t.trace_id)
+    task_id_extractable = has_metadata_task_id or len(task_ids) < n
 
     # ── Metadata keys ─────────────────────────────────────────────────────
     meta_keys: dict[str, int] = {}

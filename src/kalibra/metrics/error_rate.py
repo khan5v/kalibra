@@ -11,8 +11,7 @@ Statistical approach:
     Noise threshold: 0.5 pp — error rate changes below this are noise.
 
 Threshold fields:
-    tool_error_rate_delta: error rate change (percentage points) — name kept
-        for backward compatibility with existing gate configs.
+    error_rate_delta: error rate change (percentage points)
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ class ErrorRateMetric(ComparisonMetric):
     noise_threshold = 0.5
     higher_is_better = False
     _fields = {
-        "tool_error_rate_delta": "Error rate change (percentage points)",
+        "error_rate_delta": "Error rate change (percentage points)",
     }
 
     def compare(
@@ -82,4 +81,4 @@ class ErrorRateMetric(ComparisonMetric):
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         if result.delta is None:
             return {}
-        return {"tool_error_rate_delta": result.delta}
+        return {"error_rate_delta": result.delta}

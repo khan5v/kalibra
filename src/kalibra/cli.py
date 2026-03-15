@@ -56,11 +56,13 @@ def init(force):
               help="Field path for per-task matching (e.g. metadata.task_name).")
 @click.option("-v", "--verbose", is_flag=True, default=False,
               help="Show detailed output — per-span breakdown, CIs, p-values.")
+@click.option("-q", "--quiet", is_flag=True, default=False,
+              help="Suppress status messages (config discovery, loading). CI-friendly.")
 @click.option("--metrics", "show_metrics", is_flag=True, default=False,
               help="List all available metrics and their --require threshold fields, then exit.")
 def compare(baseline, current, out_format, require, config_path,
             output, trace_id_field, outcome, cost_field,
-            task_id, verbose, show_metrics):
+            task_id, verbose, quiet, show_metrics):
     """Compare two trace datasets — regression detection, statistical diff.
 
     \b
@@ -84,7 +86,8 @@ def compare(baseline, current, out_format, require, config_path,
         require=require, config_path=config_path,
         output=output,
         trace_id_field=trace_id_field, outcome=outcome,
-        cost_field=cost_field, task_id=task_id, verbose=verbose,
+        cost_field=cost_field, task_id=task_id,
+        verbose=verbose, quiet=quiet,
     )
 
 

@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import click
 
 from kalibra import display
+
+
+def _status(msg: str, out_format: str, quiet: bool) -> None:
+    """Print status line. Suppressed by --quiet, sent to stderr for json/markdown."""
+    if quiet:
+        return
+    if out_format in ("json", "markdown"):
+        click.echo(click.style(msg, dim=True), err=True)
+    else:
+        click.echo(click.style(msg, dim=True))
 
 
 def run_compare(
@@ -21,6 +32,7 @@ def run_compare(
     cost_field: str | None,
     task_id: str | None,
     verbose: bool = False,
+    quiet: bool = False,
 ) -> None:
     """Execute the compare command."""
     from kalibra.config import CompareConfig, find_config
@@ -37,12 +49,12 @@ def run_compare(
             raise click.UsageError(
                 f"--config must be a file, not a directory: {config_path}"
             )
-        click.echo(click.style(f"  Using config: {config_path}", dim=True))
+        _status(f"  Using config: {config_path}", out_format, quiet)
     else:
         discovered = find_config()
         if discovered:
             config_path = str(discovered)
-            click.echo(click.style(f"  Using {config_path}", dim=True))
+            _status(f"  Using {config_path}", out_format, quiet)
 
     config = CompareConfig.load(config_path)
 
@@ -97,10 +109,10 @@ def run_compare(
     c_fields = config.fields.merge(c_pop.fields if c_pop else None)
 
     try:
-        click.echo(f"Loading {baseline_path}")
+        _status(f"Loading {baseline_path}", out_format, quiet)
         b_traces = load_traces(baseline_path, fields=b_fields)
 
-        click.echo(f"Loading {current_path}")
+        _status(f"Loading {current_path}", out_format, quiet)
         c_traces = load_traces(current_path, fields=c_fields)
     except ValueError as exc:
         display.load_error(baseline_path, str(exc))
@@ -130,7 +142,7 @@ def run_compare(
     if output:
         with open(output, "w") as f:
             f.write(text)
-        click.echo(f"Report written to {output}")
+        _status(f"Report written to {output}", out_format, quiet)
     else:
         click.echo(text)
 
