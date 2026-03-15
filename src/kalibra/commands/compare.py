@@ -7,129 +7,6 @@ from pathlib import Path
 import click
 
 from kalibra import display
-from kalibra.converters.base import (
-    AF_COST,
-    GEN_AI_INPUT_TOKENS,
-    GEN_AI_OUTPUT_TOKENS,
-    OUTCOME_FAILURE,
-    OUTCOME_SUCCESS,
-)
-
-CONFIG_FILENAME = "kalibra.yml"
-
-
-def _apply_field_overrides(traces: list, fields) -> None:
-    """Apply field mappings to traces.
-
-    Maps user-specified field names to Kalibra's standard attribute keys
-    (kalibra.cost, gen_ai.usage.input_tokens, etc.). Also applies outcome
-    override via the existing apply_overrides mechanism.
-
-    Args:
-        traces: List of Trace objects to modify in place.
-        fields: FieldsConfig with the resolved field mappings for this source.
-    """
-    from kalibra.converters.base import apply_overrides, make_span
-    from kalibra.config import CostConfig, OutcomeConfig, SourceConfig
-    from opentelemetry.sdk.trace import StatusCode
-
-    # Cost and outcome via existing override mechanism (metadata + span attrs).
-    if fields.outcome or fields.cost:
-        override_cfg = SourceConfig(
-            source="", project="",
-            outcome=(
-                OutcomeConfig(field=fields.outcome) if fields.outcome else None
-            ),
-            cost=CostConfig(attr=fields.cost) if fields.cost else None,
-        )
-        apply_overrides(traces, override_cfg)
-
-    # Fallback: for flat-eval data, outcome field may be in span attributes
-    # (from auto-parsed JSON strings) rather than trace metadata.
-    if fields.outcome:
-        for trace in traces:
-            if trace.outcome:
-                continue
-            for s in trace.spans:
-                val = (s.attributes or {}).get(fields.outcome)
-                if val is None:
-                    continue
-                if isinstance(val, bool):
-                    trace.outcome = OUTCOME_SUCCESS if val else OUTCOME_FAILURE
-                else:
-                    val_str = str(val).lower().strip()
-                    if val_str in ("success", "true", "1", "pass"):
-                        trace.outcome = OUTCOME_SUCCESS
-                    elif val_str in ("failure", "false", "0", "fail", "error"):
-                        trace.outcome = OUTCOME_FAILURE
-                break
-
-    # Token remapping — read from user-specified attributes, write to standard keys.
-    if fields.input_tokens or fields.output_tokens:
-        for trace in traces:
-            new_spans = []
-            for s in trace.spans:
-                attrs = dict(s.attributes or {})
-                if fields.input_tokens and fields.input_tokens in attrs:
-                    attrs[GEN_AI_INPUT_TOKENS] = int(attrs[fields.input_tokens])
-                if fields.output_tokens and fields.output_tokens in attrs:
-                    attrs[GEN_AI_OUTPUT_TOKENS] = int(attrs[fields.output_tokens])
-                new_spans.append(make_span(
-                    name=s.name,
-                    trace_id=format(s.context.trace_id, "032x"),
-                    span_id=format(s.context.span_id, "016x"),
-                    parent_span_id=(
-                        format(s.parent.span_id, "016x") if s.parent else None
-                    ),
-                    start_ns=s.start_time,
-                    end_ns=s.end_time,
-                    attributes=attrs,
-                    error=s.status.status_code == StatusCode.ERROR,
-                ))
-            trace.spans = new_spans
-
-
-def _find_config() -> Path | None:
-    """Walk up from CWD looking for kalibra.yml. Stop at filesystem root."""
-    current = Path.cwd().resolve()
-    while True:
-        candidate = current / CONFIG_FILENAME
-        if candidate.is_file():
-            return candidate
-        parent = current.parent
-        if parent == current:
-            return None
-        current = parent
-
-
-def _pull_population(pop, name: str, cache_dir: str, refresh: bool = False) -> str:
-    """Pull traces for a population config and return the local file path."""
-    if pop.path:
-        return pop.path
-
-    if not pop.source or not pop.project:
-        raise click.UsageError(
-            f"Config '{name}' needs either 'path' or 'source' + 'project'."
-        )
-
-    from kalibra.commands.pull import cache_path, do_pull
-
-    tag_slug = "-".join(pop.tags)[:50] if pop.tags else name
-    cache_name = f"{pop.project}_{tag_slug}".replace("/", "_").replace(" ", "_")
-    dest = cache_path(cache_name, cache_dir=cache_dir)
-
-    if refresh or not dest.exists():
-        do_pull(
-            source=pop.source,
-            project=pop.project,
-            since=pop.since,
-            limit=pop.limit,
-            output=str(dest),
-            tags=pop.tags or None,
-            session_id=pop.session,
-        )
-
-    return str(dest)
 
 
 def run_compare(
@@ -138,10 +15,7 @@ def run_compare(
     out_format: str,
     require: tuple,
     config_path: str | None,
-    sources_dir: str | None,
     output: str | None,
-    refresh: bool,
-    cache_dir: str,
     trace_id_field: str | None,
     outcome: str | None,
     cost_field: str | None,
@@ -149,10 +23,10 @@ def run_compare(
     verbose: bool = False,
 ) -> None:
     """Execute the compare command."""
-    from kalibra.compare import ThresholdError, compare_collections, validate_require_exprs
-    from kalibra.config import CompareConfig, load_sources, resolve_metrics
-    from kalibra.metrics import DEFAULT_METRICS
-    from kalibra.report import render
+    from kalibra.config import CompareConfig, find_config
+    from kalibra.engine import ThresholdError, compare, resolve_metrics
+    from kalibra.loader import load_traces
+    from kalibra.renderers import render
 
     # ── Resolve config file ───────────────────────────────────────────────
     if config_path is not None:
@@ -165,15 +39,10 @@ def run_compare(
             )
         click.echo(click.style(f"  Using config: {config_path}", dim=True))
     else:
-        discovered = _find_config()
+        discovered = find_config()
         if discovered:
             config_path = str(discovered)
             click.echo(click.style(f"  Using {config_path}", dim=True))
-
-    if sources_dir is not None:
-        s = Path(sources_dir)
-        if not s.exists() or not s.is_dir():
-            raise click.UsageError(f"Sources path is not a directory: {sources_dir}")
 
     config = CompareConfig.load(config_path)
 
@@ -190,30 +59,8 @@ def run_compare(
         config.require = list(require)
 
     # ── Resolve baseline/current paths ────────────────────────────────────
-    # Priority: CLI flag > config default. Flag value can be:
-    #   - a file path (./traces.jsonl)
-    #   - a named source from kalibra.yml sources: section (prod-v1)
-    #   - a legacy @name reference (@baseline)
-
-    def _resolve_flag_or_config(flag_value: str | None, config_pop, label: str) -> str | None:
-        if flag_value:
-            # Check if it's a named source from config.
-            named = config.get_source(flag_value)
-            if named:
-                return _pull_population(named, label, cache_dir, refresh)
-            # Legacy @name syntax.
-            if flag_value.startswith("@"):
-                from kalibra.commands.pull import resolve_source
-                legacy_sources = load_sources(sources_dir)
-                return resolve_source(flag_value, legacy_sources, refresh, cache_dir=cache_dir)
-            # Treat as file path.
-            return flag_value
-        if config_pop:
-            return _pull_population(config_pop, label, cache_dir, refresh)
-        return None
-
-    baseline_path = _resolve_flag_or_config(baseline, config.baseline, "baseline")
-    current_path = _resolve_flag_or_config(current, config.current, "current")
+    baseline_path = _resolve_path(baseline, config.baseline, "baseline", config)
+    current_path = _resolve_path(current, config.current, "current", config)
 
     if not baseline_path or not current_path:
         raise click.UsageError(
@@ -231,22 +78,19 @@ def run_compare(
             )
 
     # ── Validate thresholds early ─────────────────────────────────────────
-    active_metrics = resolve_metrics(config, DEFAULT_METRICS)
+    active_metrics = resolve_metrics(config.metrics)
     known_fields: set[str] = set()
     for m in active_metrics:
         known_fields.update(m.threshold_field_names())
     try:
-        parsed_require = validate_require_exprs(config.require, known_fields)
+        from kalibra.engine import _validate_require
+        _validate_require(config.require, known_fields)
     except ThresholdError as exc:
         display.threshold_error(exc)
         ctx = click.get_current_context()
         ctx.exit(2)
 
     # ── Load traces ───────────────────────────────────────────────────────
-    # Resolve per-source fields: global fields merged with per-population overrides.
-    from kalibra.collection import TraceCollection
-    from kalibra.converters import load_traces
-
     b_pop = config.baseline
     c_pop = config.current
     b_fields = config.fields.merge(b_pop.fields if b_pop else None)
@@ -254,35 +98,31 @@ def run_compare(
 
     try:
         click.echo(f"Loading {baseline_path}")
-        b_traces = load_traces(
-            baseline_path, trace_id_field=b_fields.trace_id,
-        )
+        b_traces = load_traces(baseline_path, fields=b_fields)
 
         click.echo(f"Loading {current_path}")
-        c_traces = load_traces(
-            current_path, trace_id_field=c_fields.trace_id,
-        )
+        c_traces = load_traces(current_path, fields=c_fields)
     except ValueError as exc:
         display.load_error(baseline_path, str(exc))
         raise SystemExit(1) from None
 
-    # Apply field overrides per source (outcome, cost, tokens).
-    _apply_field_overrides(b_traces, b_fields)
-    _apply_field_overrides(c_traces, c_fields)
-
-    # Resolve task_id for per-task matching — use per-source if set.
-    config.fields.task_id = (
+    # ── Build metric_config from fields ───────────────────────────────────
+    metric_config: dict[str, dict] = {}
+    effective_task_id = (
         b_fields.task_id or c_fields.task_id or config.fields.task_id
     )
-
-    baseline_col = TraceCollection.from_traces(b_traces, source=baseline_path)
-    current_col = TraceCollection.from_traces(c_traces, source=current_path)
+    if effective_task_id:
+        metric_config["trace_breakdown"] = {"task_id_field": effective_task_id}
 
     # ── Run comparison ────────────────────────────────────────────────────
-    result = compare_collections(
-        baseline_col, current_col,
-        config=config,
-        _parsed_require=parsed_require,
+    result = compare(
+        b_traces, c_traces,
+        metrics=config.metrics,
+        require=config.require,
+        baseline_source=baseline_path,
+        current_source=current_path,
+        noise_thresholds=config.noise_thresholds,
+        metric_config=metric_config,
     )
 
     text = render(result, out_format, verbose=verbose)
@@ -294,5 +134,24 @@ def run_compare(
     else:
         click.echo(text)
 
-    if not result.thresholds_passed:
+    if not result.passed:
         raise SystemExit(1)
+
+
+def _resolve_path(
+    flag_value: str | None,
+    config_pop,
+    label: str,
+    config,
+) -> str | None:
+    """Resolve a file path from CLI flag or config population."""
+    if flag_value:
+        # Check if it's a named source from config.
+        named = config.get_source(flag_value)
+        if named and named.path:
+            return named.path
+        # Treat as file path.
+        return flag_value
+    if config_pop and config_pop.path:
+        return config_pop.path
+    return None

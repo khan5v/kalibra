@@ -11,30 +11,20 @@ from kalibra import display
 
 def run_inspect(path: str, config_path: str | None) -> None:
     """Execute the inspect command."""
-    from kalibra.config import CompareConfig, resolve_metrics
-    from kalibra.converters.base import (
-        OUTCOME_FAILURE,
-        OUTCOME_SUCCESS,
-        span_cost,
-        span_input_tokens,
-        span_output_tokens,
-    )
-    from kalibra.converters.generic import load_json_traces
-    from kalibra.metrics import DEFAULT_METRICS, _extract_task_id_from_trace
+    from kalibra.config import CompareConfig, find_config
+    from kalibra.engine import resolve_metrics
+    from kalibra.loader import load_traces
+    from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
 
     # Load config — needed for trace_id field mapping.
-    # Walk up to find kalibra.yml if no --config flag.
     if not config_path:
-        from kalibra.commands.compare import _find_config
-        discovered = _find_config()
+        discovered = find_config()
         if discovered:
             config_path = str(discovered)
     config = CompareConfig.load(config_path)
 
     try:
-        traces = load_json_traces(
-            Path(path), trace_id_field=config.fields.trace_id,
-        )
+        traces = load_traces(path, fields=config.fields)
     except ValueError as exc:
         display.load_error(path, str(exc))
         raise SystemExit(1) from None
@@ -47,22 +37,22 @@ def run_inspect(path: str, config_path: str | None) -> None:
     n_spans = sum(len(t.spans) for t in traces)
 
     # Determine active metrics.
-    active = resolve_metrics(config, DEFAULT_METRICS)
+    active = resolve_metrics(config.metrics)
     active_names = {m.name for m in active}
 
     # ── Data coverage ─────────────────────────────────────────────────────
-    has_outcome = sum(1 for t in traces if t.outcome in (OUTCOME_SUCCESS, OUTCOME_FAILURE))
-    has_cost = sum(1 for t in traces if any(span_cost(s) > 0 for s in t.spans))
-    has_tokens = sum(
-        1 for t in traces
-        if any(span_input_tokens(s) > 0 or span_output_tokens(s) > 0 for s in t.spans)
+    has_outcome = sum(
+        1 for t in traces if t.outcome in (OUTCOME_SUCCESS, OUTCOME_FAILURE)
     )
+    has_cost = sum(1 for t in traces if t.total_cost > 0)
+    has_tokens = sum(1 for t in traces if t.total_tokens > 0)
     has_duration = sum(1 for t in traces if t.duration > 0)
 
     # Task ID: check if extraction produces something matchable.
     task_ids = set()
     for t in traces:
-        task_ids.add(_extract_task_id_from_trace(t, config.task_id))
+        tid = t.metadata.get("task_id", t.trace_id)
+        task_ids.add(tid)
     all_raw_ids = task_ids == {t.trace_id for t in traces}
     task_id_extractable = not all_raw_ids and len(task_ids) < n
 
@@ -99,11 +89,13 @@ def run_inspect(path: str, config_path: str | None) -> None:
         click.echo(f"  {click.style('(based on active config)', dim=True)}")
     click.echo()
 
-    needs_outcome = active_names & {"success_rate", "per_task", "token_efficiency", "cost_quality"}
+    needs_outcome = active_names & {
+        "success_rate", "trace_breakdown", "token_efficiency", "cost_quality",
+    }
     needs_cost = active_names & {"cost", "cost_quality"}
     needs_tokens = active_names & {"token_usage", "token_efficiency"}
     needs_duration = active_names & {"duration"}
-    needs_task_id = active_names & {"per_task"}
+    needs_task_id = active_names & {"trace_breakdown"}
 
     def _coverage_line(label: str, count: int, total: int, needed_by: set[str]):
         if not needed_by:
@@ -124,13 +116,13 @@ def run_inspect(path: str, config_path: str | None) -> None:
 
     if needs_task_id:
         if task_id_extractable:
-            _coverage_line("Task ID", len(task_ids), n, {"per_task"})
+            _coverage_line("Task ID", len(task_ids), n, {"trace_breakdown"})
         else:
             ok = click.style("✗", fg="yellow")
             click.echo(
                 f"    {ok} {click.style('Task ID', bold=True):<24s}"
                 f"{'0/'+str(n):>8s} traces"
-                f"  {click.style('(per_task)', dim=True)}"
+                f"  {click.style('(trace_breakdown)', dim=True)}"
             )
             hint = "each trace has a unique ID — set fields.task_id in config"
             click.echo(f"      {click.style(hint, dim=True)}")

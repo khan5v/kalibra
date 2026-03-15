@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,7 +11,7 @@ import yaml
 from click.testing import CliRunner
 
 from kalibra.cli import main
-from kalibra.config import CompareConfig, PopulationConfig, FieldsConfig
+from kalibra.config import CompareConfig, FieldsConfig, PopulationConfig
 
 
 @pytest.fixture()
@@ -22,20 +22,29 @@ def runner():
 @pytest.fixture()
 def sample_traces(tmp_path):
     """Create two small JSONL trace files for testing."""
-    from kalibra.converters.base import Trace, make_span
-    from kalibra.converters.generic import save_jsonl
-
-    spans_b = [make_span("step", "t1__m__0", "s1", None, 0, int(1e9),
-                         {"kalibra.cost": 0.01, "gen_ai.usage.input_tokens": 100,
-                          "gen_ai.usage.output_tokens": 50})]
-    spans_c = [make_span("step", "t1__m__0", "s2", None, 0, int(2e9),
-                         {"kalibra.cost": 0.02, "gen_ai.usage.input_tokens": 200,
-                          "gen_ai.usage.output_tokens": 80})]
-
     baseline = tmp_path / "baseline.jsonl"
     current = tmp_path / "current.jsonl"
-    save_jsonl([Trace("t1__m__0", spans_b, outcome="success")], str(baseline))
-    save_jsonl([Trace("t1__m__0", spans_c, outcome="success")], str(current))
+
+    b_trace = {
+        "trace_id": "t1",
+        "outcome": "success",
+        "spans": [{
+            "span_id": "s1", "name": "step",
+            "cost": 0.01, "input_tokens": 100, "output_tokens": 50,
+            "start_ns": 0, "end_ns": 1_000_000_000,
+        }],
+    }
+    c_trace = {
+        "trace_id": "t1",
+        "outcome": "success",
+        "spans": [{
+            "span_id": "s2", "name": "step",
+            "cost": 0.02, "input_tokens": 200, "output_tokens": 80,
+            "start_ns": 0, "end_ns": 2_000_000_000,
+        }],
+    }
+    baseline.write_text(json.dumps(b_trace) + "\n")
+    current.write_text(json.dumps(c_trace) + "\n")
     return str(baseline), str(current)
 
 
@@ -44,16 +53,14 @@ def sample_traces(tmp_path):
 class TestCompareConfigParsing:
     def test_from_dict_full(self):
         data = {
-            "baseline": {"source": "langfuse", "project": "p1", "tags": ["v1"]},
+            "baseline": {"path": "./baseline.jsonl"},
             "current": {"path": "./current.jsonl"},
             "metrics": ["success_rate", "cost"],
             "require": ["success_rate_delta >= -2"],
             "fields": {"task_id": "braintrust.task_id"},
         }
         cfg = CompareConfig.from_dict(data)
-        assert cfg.baseline.source == "langfuse"
-        assert cfg.baseline.project == "p1"
-        assert cfg.baseline.tags == ["v1"]
+        assert cfg.baseline.path == "./baseline.jsonl"
         assert cfg.current.path == "./current.jsonl"
         assert cfg.metrics == ["success_rate", "cost"]
         assert cfg.require == ["success_rate_delta >= -2"]
@@ -75,7 +82,6 @@ class TestCompareConfigParsing:
         cfg = CompareConfig.from_dict(data)
         assert cfg.baseline.path == "./a.jsonl"
         assert cfg.current.path == "./b.jsonl"
-        assert cfg.baseline.source is None
 
     def test_task_id_via_fields(self):
         cfg = CompareConfig.from_dict({"fields": {"task_id": "meta.tid"}})
@@ -86,15 +92,9 @@ class TestCompareConfigParsing:
         cfg = CompareConfig.from_dict({"task_id": "old.field"})
         assert cfg.task_id == "old.field"
 
-    def test_population_tags_as_string(self):
-        pop = PopulationConfig.from_dict({"source": "langfuse", "project": "p", "tags": "v1"})
-        assert pop.tags == ["v1"]
-
     def test_population_empty_dict(self):
         pop = PopulationConfig.from_dict({})
         assert pop.path is None
-        assert pop.source is None
-        assert pop.tags == []
 
 
 # ── Config discovery ──────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ class TestConfigDiscovery:
 
         with runner.isolated_filesystem(temp_dir=tmp_path):
             result = runner.invoke(main, ["compare"])
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
         assert "Using" in result.output
         assert "Kalibra Compare" in result.output
 
@@ -130,7 +130,7 @@ class TestConfigDiscovery:
         result = runner.invoke(main, [
             "compare", "--config", str(cfg_file),
         ])
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
         assert "custom.yml" in result.output
 
 
@@ -151,8 +151,7 @@ class TestCLIOverrides:
             result = runner.invoke(main, [
                 "compare", "--require", "success_rate_delta >= -99",
             ])
-        assert result.exit_code == 0
-        # Only the CLI gate should appear, not the config ones.
+        assert result.exit_code == 0, result.output
         assert "success_rate_delta >= -99" in result.output
         assert "regressions <= 5" not in result.output
 
@@ -169,78 +168,30 @@ class TestCLIOverrides:
             result = runner.invoke(main, [
                 "compare", "--baseline", baseline,
             ])
-        # Should succeed because CLI --baseline overrides the bad config path.
-        assert result.exit_code == 0
+        assert result.exit_code == 0, result.output
         assert "Kalibra Compare" in result.output
 
 
-# ── Init command ──────────────────────────────────────────────────────────────
-
-class TestInit:
-    def test_init_creates_file(self, runner, tmp_path):
-        with runner.isolated_filesystem(temp_dir=tmp_path):
-            result = runner.invoke(main, ["init", "--force"], input="4\n./a.jsonl\n./b.jsonl\n")
-            assert result.exit_code == 0
-            assert "Created kalibra.yml" in result.output
-
-            config = yaml.safe_load(Path("kalibra.yml").read_text())
-            assert config["baseline"]["path"] == "./a.jsonl"
-            assert config["current"]["path"] == "./b.jsonl"
-            assert "success_rate" in config["metrics"]
-            assert len(config["require"]) > 0
-
-    def test_init_remote_source(self, runner, tmp_path):
-        with runner.isolated_filesystem(temp_dir=tmp_path):
-            result = runner.invoke(
-                main, ["init", "--force"],
-                input="1\nmy-project\nprod,v1\nprod,v2\n",
-            )
-            assert result.exit_code == 0
-            config = yaml.safe_load(Path("kalibra.yml").read_text())
-            assert config["baseline"]["source"] == "langfuse"
-            assert config["baseline"]["project"] == "my-project"
-            assert config["current"]["tags"] == ["prod", "v2"]
-
-    def test_init_empty_tags(self, runner, tmp_path):
-        with runner.isolated_filesystem(temp_dir=tmp_path):
-            result = runner.invoke(
-                main, ["init", "--force"],
-                input="2\nmy-project\n\n\n",
-            )
-            assert result.exit_code == 0
-            config = yaml.safe_load(Path("kalibra.yml").read_text())
-            assert config["baseline"]["source"] == "langsmith"
-            assert "tags" not in config["baseline"]
-
-    def test_init_no_overwrite_without_force(self, runner, tmp_path):
-        with runner.isolated_filesystem(temp_dir=tmp_path):
-            Path("kalibra.yml").write_text("existing: true")
-            result = runner.invoke(main, ["init"], input="n\n")
-            assert "Aborted" in result.output
-            assert yaml.safe_load(Path("kalibra.yml").read_text()) == {"existing": True}
-
-
-# ── Init → Compare flow ──────────────────────────────────────────────────────
+# ── Named sources ────────────────────────────────────────────────────────────
 
 class TestNamedSources:
     def test_sources_parsed(self):
         data = {
             "sources": {
-                "prod-v1": {"source": "langfuse", "project": "p", "tags": ["v1"]},
-                "prod-v2": {"source": "langfuse", "project": "p", "tags": ["v2"]},
+                "data-a": {"path": "./a.jsonl"},
+                "data-b": {"path": "./b.jsonl"},
             },
-            "baseline": "prod-v1",
-            "current": "prod-v2",
+            "baseline": "data-a",
+            "current": "data-b",
         }
         cfg = CompareConfig.from_dict(data)
         assert len(cfg.sources) == 2
-        assert cfg.baseline.tags == ["v1"]
-        assert cfg.current.tags == ["v2"]
-        assert cfg.get_source("prod-v1").project == "p"
+        assert cfg.baseline.path == "./a.jsonl"
+        assert cfg.current.path == "./b.jsonl"
 
     def test_unknown_source_reference_errors(self):
         data = {
-            "sources": {"a": {"source": "langfuse", "project": "p"}},
+            "sources": {"a": {"path": "./a.jsonl"}},
             "baseline": "nonexistent",
         }
         with pytest.raises(ValueError, match="Unknown source"):
@@ -249,13 +200,13 @@ class TestNamedSources:
     def test_inline_and_reference_mixed(self):
         data = {
             "sources": {
-                "prod": {"source": "langfuse", "project": "p", "tags": ["v1"]},
+                "prod": {"path": "./prod.jsonl"},
             },
             "baseline": "prod",
             "current": {"path": "./local.jsonl"},
         }
         cfg = CompareConfig.from_dict(data)
-        assert cfg.baseline.source == "langfuse"
+        assert cfg.baseline.path == "./prod.jsonl"
         assert cfg.current.path == "./local.jsonl"
 
     def test_named_source_via_flag(self, runner, sample_traces, tmp_path):
@@ -273,7 +224,7 @@ class TestNamedSources:
             result = runner.invoke(main, [
                 "compare", "--baseline", "data-a", "--current", "data-b",
             ])
-        assert result.exit_code in (0, 1)  # may fail gates
+        assert result.exit_code in (0, 1)
         assert "Kalibra Compare" in result.output
 
 
@@ -281,15 +232,43 @@ class TestInitCompareFlow:
     def test_init_then_compare(self, runner, sample_traces, tmp_path):
         baseline, current = sample_traces
         with runner.isolated_filesystem(temp_dir=tmp_path):
-            # Init with local files pointing to our sample data.
             result = runner.invoke(
                 main, ["init", "--force"],
-                input=f"4\n{baseline}\n{current}\n",
+                input=f"{baseline}\n{current}\n",
             )
             assert result.exit_code == 0
 
-            # Compare runs end-to-end (may pass or fail gates — we just
-            # verify it ran the comparison, not the gate outcome).
             result = runner.invoke(main, ["compare"])
             assert "Kalibra Compare" in result.output
             assert "Thresholds" in result.output
+
+
+# ── Fields config ─────────────────────────────────────────────────────────────
+
+class TestFieldsConfig:
+    def test_merge_override_wins(self):
+        base = FieldsConfig(trace_id="id", outcome="result")
+        override = FieldsConfig(outcome="status")
+        merged = base.merge(override)
+        assert merged.trace_id == "id"
+        assert merged.outcome == "status"
+
+    def test_merge_none_keeps_base(self):
+        base = FieldsConfig(cost="my_cost")
+        merged = base.merge(None)
+        assert merged.cost == "my_cost"
+
+    def test_per_source_fields(self):
+        data = {
+            "sources": {
+                "a": {"path": "./a.jsonl", "fields": {"outcome": "result"}},
+                "b": {"path": "./b.jsonl", "fields": {"outcome": "status"}},
+            },
+            "baseline": "a",
+            "current": "b",
+            "fields": {"cost": "total_cost"},
+        }
+        cfg = CompareConfig.from_dict(data)
+        assert cfg.baseline.fields.outcome == "result"
+        assert cfg.current.fields.outcome == "status"
+        assert cfg.fields.cost == "total_cost"

@@ -1,7 +1,7 @@
 # Model comparison — evaluate cost vs. quality tradeoffs between models.
 #
 # Usage:
-#   kalibra compare --baseline @gpt4-run --current @gpt4o-run \
+#   kalibra compare --baseline ./gpt4-traces.jsonl --current ./gpt4o-traces.jsonl \
 #     --config config/examples/model-comparison.yml
 #
 # Focuses on cost-effectiveness metrics. No hard gates — use this

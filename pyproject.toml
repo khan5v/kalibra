@@ -5,14 +5,14 @@ build-backend = "hatchling.build"
 [project]
 name = "kalibra"
 version = "0.1.0"
-description = "Regression detection and analysis for AI agents — compare runs, gate CI on quality, connect to Langfuse and LangSmith."
+description = "Regression detection and CI quality gates for AI agents."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
     { name = "Vladimir Orekhov" },
 ]
-keywords = ["agents", "observability", "regression", "evaluation", "workflow", "opentelemetry", "llm", "langfuse", "langsmith"]
+keywords = ["agents", "observability", "regression", "evaluation", "llm", "ci", "quality-gate"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -26,10 +26,7 @@ classifiers = [
 
 dependencies = [
     "click>=8.0",
-    "httpx>=0.27",              # Langfuse REST connector
-    "langsmith>=0.1",           # LangSmith SDK connector
-    "opentelemetry-sdk>=1.20",  # ReadableSpan, SpanContext, StatusCode
-    "pyyaml>=6.0",              # config parsing
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -46,8 +43,8 @@ dev = [
 kalibra = "kalibra.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/vorekhov/kalibra"
-Repository = "https://github.com/vorekhov/kalibra"
+Homepage = "https://github.com/khan5v/kalibra"
+Repository = "https://github.com/khan5v/kalibra"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kalibra"]

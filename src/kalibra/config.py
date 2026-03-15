@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import importlib
-import sys
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from pathlib import Path
 
-_AUTO_PLUGIN_FILE = "kalibra_metrics.py"
-_LEGACY_CONFIG_FILE = "config/compare.yml"
-_LEGACY_SOURCES_DIR = "config/sources"
+CONFIG_FILENAME = "kalibra.yml"
 
 
 # ── Field mappings ────────────────────────────────────────────────────────────
@@ -59,126 +55,22 @@ class FieldsConfig:
 class PopulationConfig:
     """Where to get traces for one side of the comparison.
 
-    Either ``path`` (local JSONL) or ``source`` + ``project`` (remote pull).
-    Optionally carries its own ``fields`` overrides.
+    ``path`` points to a local JSONL file.
+    ``fields`` optionally overrides global field mappings for this source.
     """
 
-    # Local file path — if set, no remote pull needed.
     path: str | None = None
-
-    # Remote source — langfuse, langsmith, braintrust.
-    source: str | None = None
-    project: str | None = None
-    since: str = "7d"
-    limit: int = 5000
-    tags: list[str] = dc_field(default_factory=list)
-    session: str | None = None
-
-    # Per-source field overrides (None = use global fields).
     fields: FieldsConfig | None = None
 
     @classmethod
     def from_dict(cls, data: dict | None) -> PopulationConfig | None:
         if data is None or not isinstance(data, dict):
             return None
-        raw_tags = data.get("tags") or []
-        if isinstance(raw_tags, str):
-            raw_tags = [raw_tags]
         fields_data = data.get("fields")
         return cls(
             path=data.get("path"),
-            source=data.get("source"),
-            project=data.get("project"),
-            since=str(data.get("since", "7d")),
-            limit=int(data.get("limit", 5000)),
-            tags=[str(t) for t in raw_tags],
-            session=data.get("session"),
             fields=FieldsConfig.from_dict(fields_data) if fields_data else None,
         )
-
-
-# ── Outcome / cost overrides (legacy, still used by connectors) ──────────────
-
-@dataclass
-class OutcomeConfig:
-    field: str | None = None
-    success: list[str] = dc_field(default_factory=lambda: ["success"])
-    failure: list[str] = dc_field(default_factory=lambda: ["failure", "error", "failed"])
-
-    @classmethod
-    def from_dict(cls, data) -> OutcomeConfig | None:
-        if data is None or not isinstance(data, dict):
-            return None
-        return cls(
-            field=data.get("field"),
-            success=data.get("success", ["success"]),
-            failure=data.get("failure", ["failure", "error", "failed"]),
-        )
-
-
-@dataclass
-class CostConfig:
-    attr: str | None = None
-
-    @classmethod
-    def from_dict(cls, data) -> CostConfig | None:
-        if data is None or not isinstance(data, dict):
-            return None
-        return cls(attr=data.get("attr"))
-
-
-@dataclass
-class SourceConfig:
-    """Legacy named source config (from config/sources/*.yml)."""
-
-    source: str
-    project: str = ""
-    path: str | None = None
-    since: str = "7d"
-    limit: int = 5000
-    tags: list[str] = dc_field(default_factory=list)
-    session: str | None = None
-    outcome: OutcomeConfig | None = None
-    cost: CostConfig | None = None
-
-    @classmethod
-    def from_dict(cls, data: dict) -> SourceConfig:
-        source = data.get("source", "")
-        if source == "jsonl" and "path" not in data:
-            raise ValueError("JSONL source requires a 'path' field")
-        if source != "jsonl" and "project" not in data:
-            raise ValueError(f"Source '{source}' requires a 'project' field")
-        raw_tags = data.get("tags") or []
-        if isinstance(raw_tags, str):
-            raw_tags = [raw_tags]
-        return cls(
-            source=source,
-            project=data.get("project", ""),
-            path=data.get("path"),
-            since=str(data.get("since", "7d")),
-            limit=int(data.get("limit", 5000)),
-            tags=[str(t) for t in raw_tags],
-            session=data.get("session") or None,
-            outcome=OutcomeConfig.from_dict(data.get("outcome")),
-            cost=CostConfig.from_dict(data.get("cost")),
-        )
-
-
-def load_sources(directory: str | None = None) -> dict[str, SourceConfig]:
-    """Load legacy named sources from config/sources/*.yml."""
-    import yaml
-
-    d = Path(directory) if directory else Path(_LEGACY_SOURCES_DIR)
-    if not d.is_dir():
-        return {}
-    result: dict[str, SourceConfig] = {}
-    for p in sorted(d.glob("*.yml")):
-        with p.open() as f:
-            data = yaml.safe_load(f) or {}
-        for name, cfg in data.items():
-            if isinstance(cfg, dict):
-                result[name] = SourceConfig.from_dict(cfg)
-    return result
 
 
 def _resolve_population(
@@ -189,7 +81,6 @@ def _resolve_population(
     if value is None:
         return None
     if isinstance(value, str):
-        # String reference to a named source.
         if value in sources:
             return sources[value]
         raise ValueError(
@@ -238,6 +129,10 @@ class CompareConfig:
     def task_id(self, value: str | None) -> None:
         self.fields.task_id = value
 
+    def get_source(self, name: str) -> PopulationConfig | None:
+        """Look up a named source."""
+        return self.sources.get(name)
+
     @classmethod
     def from_dict(cls, data: dict) -> CompareConfig:
         raw_noise = data.get("noise_thresholds") or {}
@@ -267,17 +162,9 @@ class CompareConfig:
             noise_thresholds={k: float(v) for k, v in raw_noise.items()},
         )
 
-    def get_source(self, name: str) -> PopulationConfig | None:
-        """Look up a named source."""
-        return self.sources.get(name)
-
     @classmethod
     def load(cls, path: str | None = None) -> CompareConfig:
-        """Load config from a file.
-
-        Tries ``path`` first, then falls back to the legacy ``config/compare.yml``.
-        Returns an empty config if no file is found.
-        """
+        """Load config from a file or discover kalibra.yml by walking up from CWD."""
         import yaml
 
         if path:
@@ -287,57 +174,24 @@ class CompareConfig:
                     data = yaml.safe_load(f) or {}
                 return cls.from_dict(data)
 
-        # Legacy fallback.
-        legacy = Path(_LEGACY_CONFIG_FILE)
-        if legacy.exists():
-            with legacy.open() as f:
+        # Walk-up discovery.
+        discovered = find_config()
+        if discovered:
+            with discovered.open() as f:
                 data = yaml.safe_load(f) or {}
             return cls.from_dict(data)
 
         return cls()
 
 
-# ── Metric resolution ─────────────────────────────────────────────────────────
-
-def resolve_metrics(config: CompareConfig, defaults: list) -> list:
-    """Return the active metric list for a comparison run."""
-    auto_extras = _load_auto_plugin()
-
-    if config.metrics is None:
-        return list(defaults) + auto_extras
-
-    by_name = {m.name: m for m in defaults}
-    active: list = []
-    for entry in config.metrics:
-        if entry in by_name:
-            active.append(by_name[entry])
-        elif "." in entry:
-            active.extend(_load_module_metrics(entry))
-    active.extend(auto_extras)
-    return active
-
-
-def _load_auto_plugin() -> list:
-    auto = Path(_AUTO_PLUGIN_FILE)
-    if not auto.exists():
-        return []
-    cwd = str(Path.cwd())
-    if cwd not in sys.path:
-        sys.path.insert(0, cwd)
-    try:
-        mod = importlib.import_module(auto.stem)
-    except ImportError as e:
-        raise ImportError(
-            f"Auto-plugin {_AUTO_PLUGIN_FILE!r} could not be imported: {e}"
-        ) from e
-    return list(getattr(mod, "METRICS", []))
-
-
-def _load_module_metrics(dotted: str) -> list:
-    try:
-        mod = importlib.import_module(dotted)
-    except ImportError as e:
-        raise ImportError(
-            f"Plugin module {dotted!r} could not be imported: {e}"
-        ) from e
-    return list(getattr(mod, "METRICS", []))
+def find_config() -> Path | None:
+    """Walk up from CWD looking for kalibra.yml."""
+    current = Path.cwd().resolve()
+    while True:
+        candidate = current / CONFIG_FILENAME
+        if candidate.is_file():
+            return candidate
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent

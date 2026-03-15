@@ -52,16 +52,6 @@ def threshold_error(exc: Exception) -> None:
     click.echo()
 
 
-def connector_error(source: str, message: str) -> None:
-    """Render a connector error."""
-    lines = message.strip().splitlines()
-    header("Kalibra", "connection failed")
-    click.echo(f"  {click.style('▸', fg='yellow')} {click.style(source, bold=True)}: {lines[0]}")
-    for line in lines[1:]:
-        click.echo(f"    {click.style(line.strip(), dim=True)}")
-    click.echo(f"  {bar()}")
-    click.echo()
-
 
 def load_error(path: str, message: str) -> None:
     """Render a trace loading error in styled format."""
@@ -92,33 +82,14 @@ def load_error(path: str, message: str) -> None:
     click.echo()
 
 
-def no_traces_warning(source: str, project: str, tags: list[str] | None, session_id: str | None,
-                      since: str) -> None:
-    """Render a 'no traces found' warning with hints."""
-    header("Kalibra", "no traces found")
-    click.echo(
-        f"  {click.style('▸', fg='yellow')} {click.style(source, bold=True)} "
-        f"returned 0 traces for project {click.style(project, bold=True)}"
-    )
-    hints = ["Check that the project name is correct"]
-    if tags:
-        hints.append(f"Tags filter: {tags} — try without tags to verify data exists")
-    if session_id:
-        hints.append(f"Session filter: {session_id} — try without session to verify")
-    hints.append(f"Time window: {since} — try a wider range (e.g. 30d)")
-    for h in hints:
-        click.echo(f"    {click.style(h, dim=True)}")
-    click.echo(f"  {bar()}")
-    click.echo()
-
 
 def metrics_list() -> None:
     """Print all available metrics and their threshold fields."""
-    from kalibra.config import CompareConfig, resolve_metrics
-    from kalibra.metrics import DEFAULT_METRICS
+    from kalibra.config import CompareConfig
+    from kalibra.engine import resolve_metrics
 
     config = CompareConfig.load()
-    all_metrics = resolve_metrics(config, DEFAULT_METRICS)
+    all_metrics = resolve_metrics(config.metrics)
 
     d = dot()
 
@@ -145,7 +116,7 @@ def metrics_list() -> None:
     example = click.style('"success_rate_delta >= -2"', fg="cyan")
     click.echo(f"  {click.style('Quick:', dim=True)}  kalibra compare --require {example}")
     click.echo()
-    config_file = click.style("config/compare.yml", fg="cyan")
+    config_file = click.style("kalibra.yml", fg="cyan")
     click.echo(f"  {click.style('Config:', dim=True)} add to {config_file}:")
     click.echo(click.style("          require:", dim=True))
     click.echo(click.style("            - success_rate_delta >= -2", dim=True))
@@ -158,36 +129,6 @@ def metrics_list() -> None:
     ))
     click.echo()
 
-
-def pull_summary(path: str | None = None, traces=None) -> None:
-    """Print a brief summary after pulling traces."""
-    if traces is None:
-        if path is None:
-            return
-        from pathlib import Path
-
-        from kalibra.converters.generic import load_json_traces
-        try:
-            traces = load_json_traces(Path(path))
-        except Exception:
-            return
-    if not traces:
-        return
-
-    from kalibra.converters.base import OUTCOME_SUCCESS
-
-    n = len(traces)
-    successes = sum(1 for t in traces if t.outcome == OUTCOME_SUCCESS)
-    unset = sum(1 for t in traces if t.outcome is None)
-    click.echo(f"  Success rate: {successes / n:.1%}")
-    if unset == n:
-        click.echo(
-            "  ! No outcome data detected — success_rate will be unavailable.\n"
-            "    Use outcome overrides in your source config to map a metadata field:\n"
-            "      outcome:\n"
-            "        field: metadata.result\n"
-            "        success: [pass, resolved]"
-        )
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
