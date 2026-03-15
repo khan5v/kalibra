@@ -8,7 +8,78 @@ import click
 
 from kalibra import display
 
+from kalibra.converters.base import AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_OUTPUT_TOKENS
+
 CONFIG_FILENAME = "kalibra.yml"
+
+
+def _apply_field_overrides(traces: list, config) -> None:
+    """Apply field mappings from config to traces.
+
+    Maps user-specified field names to Kalibra's standard attribute keys
+    (kalibra.cost, gen_ai.usage.input_tokens, etc.). Also applies outcome
+    override via the existing apply_overrides mechanism.
+    """
+    from kalibra.converters.base import apply_overrides, make_span
+    from kalibra.config import CostConfig, OutcomeConfig, SourceConfig
+    from opentelemetry.sdk.trace import StatusCode
+
+    fields = config.fields
+
+    # Cost and outcome via existing override mechanism (metadata + span attrs).
+    if fields.outcome or fields.cost:
+        override_cfg = SourceConfig(
+            source="", project="",
+            outcome=(
+                OutcomeConfig(field=fields.outcome) if fields.outcome else None
+            ),
+            cost=CostConfig(attr=fields.cost) if fields.cost else None,
+        )
+        apply_overrides(traces, override_cfg)
+
+    # Fallback: for flat-eval data, outcome field may be in span attributes
+    # (from auto-parsed JSON strings) rather than trace metadata.
+    if fields.outcome:
+        for trace in traces:
+            if trace.outcome:
+                continue
+            for s in trace.spans:
+                val = (s.attributes or {}).get(fields.outcome)
+                if val is None:
+                    continue
+                if isinstance(val, bool):
+                    trace.outcome = "success" if val else "failure"
+                else:
+                    val_str = str(val).lower().strip()
+                    if val_str in ("success", "true", "1", "pass"):
+                        trace.outcome = "success"
+                    elif val_str in ("failure", "false", "0", "fail", "error"):
+                        trace.outcome = "failure"
+                break
+
+    # Token remapping — read from user-specified attributes, write to standard keys.
+    if fields.input_tokens or fields.output_tokens:
+        for trace in traces:
+            new_spans = []
+            for s in trace.spans:
+                attrs = dict(s.attributes or {})
+                if fields.input_tokens and fields.input_tokens in attrs:
+                    attrs[GEN_AI_INPUT_TOKENS] = int(attrs[fields.input_tokens])
+                if fields.output_tokens and fields.output_tokens in attrs:
+                    attrs[GEN_AI_OUTPUT_TOKENS] = int(attrs[fields.output_tokens])
+                new_spans.append(make_span(
+                    name=s.name,
+                    trace_id=format(s.context.trace_id, "032x"),
+                    span_id=format(s.context.span_id, "016x"),
+                    parent_span_id=(
+                        format(s.parent.span_id, "016x") if s.parent else None
+                    ),
+                    start_ns=s.start_time,
+                    end_ns=s.end_time,
+                    attributes=attrs,
+                    error=s.status.status_code == StatusCode.ERROR,
+                ))
+            trace.spans = new_spans
 
 
 def _find_config() -> Path | None:
@@ -180,17 +251,9 @@ def run_compare(
         display.load_error(baseline_path, str(exc))
         raise SystemExit(1) from None
 
-    # Apply field overrides from config (outcome, cost).
-    if config.fields.outcome or config.fields.cost:
-        from kalibra.config import CostConfig, OutcomeConfig, SourceConfig
-
-        override_cfg = SourceConfig(
-            source="", project="",
-            outcome=OutcomeConfig(field=config.fields.outcome) if config.fields.outcome else None,
-            cost=CostConfig(attr=config.fields.cost) if config.fields.cost else None,
-        )
-        apply_overrides(b_traces, override_cfg)
-        apply_overrides(c_traces, override_cfg)
+    # Apply field overrides from config (outcome, cost, tokens).
+    _apply_field_overrides(b_traces, config)
+    _apply_field_overrides(c_traces, config)
 
     baseline_col = TraceCollection.from_traces(b_traces, source=baseline_path)
     current_col = TraceCollection.from_traces(c_traces, source=current_path)

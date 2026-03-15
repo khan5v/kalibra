@@ -210,10 +210,15 @@ If `kalibra inspect` shows missing data, map your trace fields:
 
 ```yaml
 fields:
+  trace_id: uuid                  # which field identifies each trace
   task_id: braintrust.task_id     # per-task regression matching
   outcome: metadata.result        # success/failure detection
-  cost: custom.cost_usd           # cost metric source
+  cost: agent_cost.total_cost     # cost metric source (supports nested paths)
+  input_tokens: key_stats.input_tokens
+  output_tokens: key_stats.output_tokens
 ```
+
+Nested JSON strings are auto-parsed — `"stats": "{\"tokens\": 500}"` becomes `stats.tokens: 500`.
 
 ### Inspect your data
 

@@ -61,6 +61,8 @@ class FieldsConfig:
     task_id: str | None = None
     outcome: str | None = None
     cost: str | None = None
+    input_tokens: str | None = None
+    output_tokens: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict | None) -> FieldsConfig:
@@ -71,6 +73,8 @@ class FieldsConfig:
             task_id=data.get("task_id"),
             outcome=data.get("outcome"),
             cost=data.get("cost"),
+            input_tokens=data.get("input_tokens"),
+            output_tokens=data.get("output_tokens"),
         )
 
 

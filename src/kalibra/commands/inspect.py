@@ -16,7 +16,13 @@ def run_inspect(path: str, config_path: str | None) -> None:
     from kalibra.converters.generic import load_json_traces
     from kalibra.metrics import DEFAULT_METRICS, _extract_task_id_from_trace
 
-    # Load config first — needed for trace_id field mapping.
+    # Load config — needed for trace_id field mapping.
+    # Walk up to find kalibra.yml if no --config flag.
+    if not config_path:
+        from kalibra.commands.compare import _find_config
+        discovered = _find_config()
+        if discovered:
+            config_path = str(discovered)
     config = CompareConfig.load(config_path)
 
     try:

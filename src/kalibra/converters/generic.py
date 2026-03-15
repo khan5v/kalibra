@@ -118,6 +118,9 @@ def _read_rows(
                     f"expected a JSON object, got {type(d).__name__}",
                 )
 
+            # Auto-parse JSON strings embedded in field values.
+            d = _auto_parse_json_strings(d)
+
             # Resolve trace ID: use configured field, remap to trace_id.
             if id_field != "trace_id" and id_field in d:
                 d["trace_id"] = d[id_field]
@@ -528,12 +531,26 @@ def _extract_attrs(row: dict) -> dict:
     if isinstance(extra, dict):
         attrs.update(extra)
 
-    # Any unknown fields → attributes
+    # Any unknown fields → attributes.
+    # Nested dicts (from auto-parsed JSON strings) are flattened with dot notation.
     for k, v in row.items():
         if k not in _RESERVED and v is not None:
-            attrs[k] = v
+            if isinstance(v, dict):
+                _flatten_dict(v, prefix=k, out=attrs)
+            elif not isinstance(v, (list, dict)):
+                attrs[k] = v
 
     return attrs
+
+
+def _flatten_dict(d: dict, prefix: str, out: dict) -> None:
+    """Flatten a nested dict into dot-notation keys."""
+    for k, v in d.items():
+        key = f"{prefix}.{k}"
+        if isinstance(v, dict):
+            _flatten_dict(v, prefix=key, out=out)
+        elif v is not None and not isinstance(v, list):
+            out[key] = v
 
 
 def _parse_timing(row: dict) -> tuple[int, int]:
@@ -596,6 +613,25 @@ def _parse_outcome(val, path: Path, line_no: int, trace_id: str) -> str | None:
     _error(path, line_no,
            f"'outcome' must be \"success\", \"failure\", or null — got {val!r}",
            trace_id=trace_id)
+
+
+def _auto_parse_json_strings(obj):
+    """Recursively parse JSON-encoded strings into dicts/lists.
+
+    Many real-world datasets store structured data as JSON strings inside
+    JSON fields (e.g. ``"stats": "{\"tokens\": 500}"``). This function
+    detects and parses them so field mappings can traverse into the result.
+    """
+    if isinstance(obj, dict):
+        return {k: _auto_parse_json_strings(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_auto_parse_json_strings(v) for v in obj]
+    if isinstance(obj, str) and obj and obj[0] in ("{", "["):
+        try:
+            return _auto_parse_json_strings(json.loads(obj))
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return obj
 
 
 def _error(path: Path, line_no: int, msg: str, *,

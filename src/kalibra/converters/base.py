@@ -162,6 +162,10 @@ def _apply_outcome_override(traces: list[Trace], cfg) -> None:
         val = _resolve_field(trace, cfg.field)
         if val is None:
             continue
+        # Handle booleans directly: True = success, False = failure.
+        if isinstance(val, bool):
+            trace.outcome = "success" if val else "failure"
+            continue
         val_str = str(val).lower().strip()
         if any(s.lower() == val_str for s in cfg.success):
             trace.outcome = "success"
