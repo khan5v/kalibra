@@ -339,12 +339,12 @@ class TestTokenEfficiencyMetric:
         obs = m.compare(b, c)
         assert m.threshold_fields(obs) == {}
 
-    def test_formatted_shows_success_count(self):
+    def test_detail_shows_success_count(self):
         m = TokenEfficiencyMetric()
         b = m.summarize(_col(cheap_fast("b1"), failed_trace("bf")))
         c = m.summarize(_col(cheap_fast("c1"), cheap_fast("c2")))
         obs = m.compare(b, c)
-        assert "1→2 successes" in obs.formatted
+        assert any("successes" in d for d in obs.detail_lines)
 
 
 # ── CostQualityMetric ────────────────────────────────────────────────────────
@@ -409,13 +409,14 @@ class TestCostQualityMetric:
         assert "cost_quality_delta_pct" in fields
         assert "cost_per_success" in fields
 
-    def test_formatted_shows_success_ratio(self):
+    def test_detail_shows_success_ratio(self):
         m = CostQualityMetric()
         b = m.summarize(_col(cheap_fast("b1"), failed_trace("bf")))
         c = m.summarize(_col(cheap_fast("c1"), cheap_fast("c2"), failed_trace("cf")))
         obs = m.compare(b, c)
-        assert "1/2" in obs.formatted  # baseline: 1 of 2 succeeded
-        assert "2/3" in obs.formatted  # current: 2 of 3 succeeded
+        detail = " ".join(obs.detail_lines)
+        assert "1/2" in detail  # baseline: 1 of 2 succeeded
+        assert "2/3" in detail  # current: 2 of 3 succeeded
 
     def test_includes_failure_cost_in_numerator(self):
         """Total cost includes failures — the real economics."""

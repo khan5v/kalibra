@@ -144,6 +144,7 @@ def run_compare(
     outcome: str | None,
     cost_field: str | None,
     task_id: str | None,
+    verbose: bool = False,
 ) -> None:
     """Execute the compare command."""
     from kalibra.compare import ThresholdError, compare_collections, validate_require_exprs
@@ -270,7 +271,7 @@ def run_compare(
         _parsed_require=parsed_require,
     )
 
-    text = render(result, out_format)
+    text = render(result, out_format, verbose=verbose)
 
     if output:
         with open(output, "w") as f:

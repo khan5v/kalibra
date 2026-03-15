@@ -51,22 +51,23 @@ _LABELS = {
     "cost": "Cost",
     "steps": "Steps",
     "duration": "Duration",
-    "tool_error_rate": "Tool errors",
+    "tool_error_rate": "Error rate",
     "path_distribution": "Path dist.",
     "token_usage": "Token usage",
     "token_efficiency": "Token eff.",
     "cost_quality": "Cost / quality",
-    "per_task": "Per-task",
+    "per_task": "Per trace",
+    "span_breakdown": "Per span",
 }
 
 _INDENT = "  "
 _DETAIL_INDENT = "                    "  # 20 chars — aligns under metric detail
 
 
-def render(result: CompareResult, fmt: str) -> str:
+def render(result: CompareResult, fmt: str, verbose: bool = False) -> str:
     """Render a CompareResult to the requested format string."""
     if fmt == "terminal":
-        return _terminal(result)
+        return _terminal(result, verbose=verbose)
     if fmt == "markdown":
         return _markdown(result)
     if fmt == "json":
@@ -77,7 +78,7 @@ def render(result: CompareResult, fmt: str) -> str:
 # ── Terminal ───────────────────────────────────────────────────────────────────
 
 
-def _terminal(r: CompareResult) -> str:
+def _terminal(r: CompareResult, verbose: bool = False) -> str:
     bar = click.style("─" * 58, dim=True)
 
     direction = r.comparison.direction
@@ -103,38 +104,150 @@ def _terminal(r: CompareResult) -> str:
             lines.append(f"{_INDENT}{warn_icon}  {click.style(w, fg='yellow')}")
         lines.append("")
 
-    for obs in r.comparison.observations.values():
+    # Group observations into sections.
+    _TASK_METRICS = {
+        "success_rate", "cost", "steps", "duration",
+        "tool_error_rate", "path_distribution",
+        "token_usage", "token_efficiency", "cost_quality",
+    }
+    _TASK_BREAKDOWN = {"per_task"}
+    _STEP_BREAKDOWN = {"span_breakdown"}
+    # In verbose: error rate hidden (shown per-span). In compact: shown.
+    _HIDDEN_IN_VERBOSE = {"tool_error_rate"}
+
+    if verbose:
+        task_obs = [
+            o for o in r.comparison.observations.values()
+            if o.name in _TASK_METRICS and o.name not in _HIDDEN_IN_VERBOSE
+        ]
+    else:
+        task_obs = [
+            o for o in r.comparison.observations.values()
+            if o.name in _TASK_METRICS
+        ]
+    task_bd = [
+        o for o in r.comparison.observations.values()
+        if o.name in _TASK_BREAKDOWN
+    ]
+    step_bd = [
+        o for o in r.comparison.observations.values()
+        if o.name in _STEP_BREAKDOWN
+    ]
+    other = [
+        o for o in r.comparison.observations.values()
+        if o.name not in _TASK_METRICS | _TASK_BREAKDOWN | _STEP_BREAKDOWN
+    ]
+
+    def _section_header(title: str) -> None:
+        lines.append(f"{_INDENT}{click.style(title, bold=True, dim=True)}")
+        lines.append("")
+
+    # ── Compact: one line per metric, no detail lines ─────────────────
+
+    def _render_metric_compact(obs) -> None:
         badge_m = _styled_badge(obs.direction)
         label_m = _LABELS.get(obs.name, obs.name)
         label_styled = click.style(f"{label_m:<16}", bold=True)
+        # For success_rate, append p-value to headline.
+        extra = ""
+        if obs.name == "success_rate" and obs.metadata.get("pvalue") is not None:
+            p = obs.metadata["pvalue"]
+            extra = f"   {click.style(f'(p={p:.3f})', dim=True)}"
+        lines.append(f"{_INDENT}{badge_m} {label_styled}{obs.formatted}{extra}")
+        # Only show warnings, no detail lines.
+        for w in obs.warnings:
+            warn_icon = click.style("!", fg="yellow", bold=True)
+            warn_text = click.style(w, fg="yellow")
+            lines.append(f"{_DETAIL_INDENT}{warn_icon}  {warn_text}")
 
-        if obs.name == "per_task":
-            meta = obs.metadata
-            if meta["matched"] == 0 and not obs.warnings:
-                continue
-            lines.append(f"{_INDENT}{badge_m} {label_styled}{obs.formatted}")
-            n_imp = meta["n_improvements"]
-            n_reg = meta["n_regressions"]
-            if n_reg > 0:
-                sample = ", ".join(meta["regressions"][:3])
-                more = f" (+{n_reg - 3} more)" if n_reg > 3 else ""
-                reg = click.style("regressed:", fg="red")
-                lines.append(f"{_DETAIL_INDENT}{reg} {sample}{more}")
-            if n_imp > 0:
-                sample = ", ".join(meta["improvements"][:3])
-                more = f" (+{n_imp - 3} more)" if n_imp > 3 else ""
-                imp = click.style("improved:", fg="green")
-                lines.append(f"{_DETAIL_INDENT}{imp}  {sample}{more}")
-        else:
-            lines.append(f"{_INDENT}{badge_m} {label_styled}{obs.formatted}")
-            for detail in obs.detail_lines:
-                lines.append(f"{_DETAIL_INDENT}{click.style(detail, dim=True)}")
+    def _render_breakdown_compact(obs) -> None:
+        meta = obs.metadata
+        if obs.name == "per_task" and meta["matched"] == 0 and not obs.warnings:
+            return
+        badge_m = _styled_badge(obs.direction)
+        label_m = _LABELS.get(obs.name, obs.name)
+        label_styled = click.style(f"{label_m:<16}", bold=True)
+        lines.append(f"{_INDENT}{badge_m} {label_styled}{obs.formatted}")
+        for w in obs.warnings:
+            warn_icon = click.style("!", fg="yellow", bold=True)
+            warn_text = click.style(w, fg="yellow")
+            lines.append(f"{_DETAIL_INDENT}{warn_icon}  {warn_text}")
 
+    # ── Verbose: full detail lines + per-item breakdowns ──────────────
+
+    def _render_metric_verbose(obs) -> None:
+        badge_m = _styled_badge(obs.direction)
+        label_m = _LABELS.get(obs.name, obs.name)
+        label_styled = click.style(f"{label_m:<16}", bold=True)
+        lines.append(f"{_INDENT}{badge_m} {label_styled}{obs.formatted}")
+        for detail in obs.detail_lines:
+            lines.append(
+                f"{_DETAIL_INDENT}{click.style(detail, dim=True)}"
+            )
         for w in obs.warnings:
             warn_icon = click.style("!", fg="yellow", bold=True)
             warn_text = click.style(w, fg="yellow")
             lines.append(f"{_DETAIL_INDENT}{warn_icon}  {warn_text}")
         lines.append("")
+
+    def _render_breakdown_verbose(obs) -> None:
+        meta = obs.metadata
+        if obs.name == "per_task" and meta["matched"] == 0 and not obs.warnings:
+            return
+        badge_m = _styled_badge(obs.direction)
+        label_m = _LABELS.get(obs.name, obs.name)
+        label_styled = click.style(f"{label_m:<16}", bold=True)
+        lines.append(f"{_INDENT}{badge_m} {label_styled}{obs.formatted}")
+        for detail in obs.detail_lines:
+            if detail.startswith(("▼", "▲", "≈")):
+                badge_char = detail[0]
+                color = {"▼": "red", "▲": "green", "≈": "cyan"}[badge_char]
+                styled = click.style(badge_char, fg=color, bold=True)
+                name_str = click.style(detail[2:], bold=True)
+                lines.append(f"{_DETAIL_INDENT}{styled} {name_str}")
+            elif detail.strip().startswith("!"):
+                warn_text = click.style(detail.strip(), fg="yellow")
+                lines.append(f"{_DETAIL_INDENT}  {warn_text}")
+            else:
+                lines.append(
+                    f"{_DETAIL_INDENT}  "
+                    f"{click.style(detail.strip(), dim=True)}"
+                )
+        for w in obs.warnings:
+            warn_icon = click.style("!", fg="yellow", bold=True)
+            warn_text = click.style(w, fg="yellow")
+            lines.append(f"{_DETAIL_INDENT}{warn_icon}  {warn_text}")
+        lines.append("")
+
+    # Pick renderers based on verbosity.
+    render_metric = _render_metric_verbose if verbose else _render_metric_compact
+    render_breakdown = _render_breakdown_verbose if verbose else _render_breakdown_compact
+
+    # ── Trace metrics ─────────────────────────────────────────────────
+    if task_obs:
+        _section_header("Trace metrics")
+        for obs in task_obs:
+            render_metric(obs)
+        if not verbose:
+            lines.append("")
+
+    # ── Trace breakdown ───────────────────────────────────────────────
+    if task_bd:
+        _section_header("Trace breakdown")
+        for obs in task_bd:
+            render_breakdown(obs)
+        lines.append("")
+
+    # ── Span breakdown ────────────────────────────────────────────────
+    if step_bd:
+        _section_header("Span breakdown")
+        for obs in step_bd:
+            render_breakdown(obs)
+        lines.append("")
+
+    # ── Other (custom metrics, plugins) ───────────────────────────────
+    for obs in other:
+        render_metric(obs)
 
     if r.validation.gates:
         lines.append(f"{_INDENT}{click.style('Thresholds', bold=True)}")

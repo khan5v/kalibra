@@ -15,6 +15,8 @@ from kalibra.collection import TraceCollection
 from kalibra.converters.base import (
     OUTCOME_FAILURE,
     OUTCOME_SUCCESS,
+    span_cost,
+    span_duration_s,
     span_input_tokens,
     span_is_error,
     span_output_tokens,
@@ -352,12 +354,27 @@ class PerTaskMetric(ComparisonMetric):
 
         if not matched:
             direction = Direction.NA
-        elif len(regressions) > len(improvements):
+        elif regressions and improvements:
+            direction = Direction.INCONCLUSIVE
+        elif regressions:
             direction = Direction.DEGRADATION
-        elif len(improvements) > len(regressions):
+        elif improvements:
             direction = Direction.UPGRADE
         else:
             direction = Direction.SAME
+
+        # Build verbose detail lines — one per task with outcome change.
+        detail_lines: list[str] = []
+        for task in regressions:
+            detail_lines.append(f"▼ {task}")
+            detail_lines.append(
+                f"  {OUTCOME_SUCCESS} → {OUTCOME_FAILURE}"
+            )
+        for task in improvements:
+            detail_lines.append(f"▲ {task}")
+            detail_lines.append(
+                f"  {OUTCOME_FAILURE} → {OUTCOME_SUCCESS}"
+            )
 
         return Observation(
             name=self.name,
@@ -366,6 +383,7 @@ class PerTaskMetric(ComparisonMetric):
             baseline=len(baseline),
             current=len(current),
             formatted=formatted,
+            detail_lines=detail_lines,
             metadata={
                 "matched": len(matched),
                 "regressions": regressions[:20],
@@ -928,8 +946,10 @@ class TokenEfficiencyMetric(ComparisonMetric):
         sign = "+" if delta >= 0 else ""
         formatted = (
             f"{b_tps:,.0f} → {c_tps:,.0f} tokens/success  {sign}{delta:.1f}%"
-            f"  ({baseline['n_successes']}→{current['n_successes']} successes)"
         )
+        details = [
+            f"{baseline['n_successes']} → {current['n_successes']} successes",
+        ]
         direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
         return Observation(
             name=self.name,
@@ -939,6 +959,7 @@ class TokenEfficiencyMetric(ComparisonMetric):
             current=current,
             delta=delta,
             formatted=formatted,
+            detail_lines=details,
             warnings=warnings,
         )
 
@@ -1012,9 +1033,11 @@ class CostQualityMetric(ComparisonMetric):
         sign = "+" if delta >= 0 else ""
         formatted = (
             f"${b_cps:.4f} → ${c_cps:.4f} per success  {sign}{delta:.1f}%"
-            f"  ({baseline['n_successes']}/{baseline['n_total']} → "
-            f"{current['n_successes']}/{current['n_total']} succeeded)"
         )
+        details = [
+            (f"{baseline['n_successes']}/{baseline['n_total']} → "
+             f"{current['n_successes']}/{current['n_total']} succeeded"),
+        ]
         direction = _direction_from_delta(delta, self.noise_threshold, self.higher_is_better)
         return Observation(
             name=self.name,
@@ -1024,6 +1047,7 @@ class CostQualityMetric(ComparisonMetric):
             current=current,
             delta=delta,
             formatted=formatted,
+            detail_lines=details,
             warnings=warnings,
         )
 
@@ -1036,11 +1060,208 @@ class CostQualityMetric(ComparisonMetric):
         }
 
 
+class SpanBreakdownMetric(ComparisonMetric):
+    """Per-span-name regression detection — compares duration, cost, tokens, and error rate."""
+
+    name = "span_breakdown"
+    description = "Per-span-name regression and improvement detection"
+    noise_threshold = 5.0
+    higher_is_better = True
+    _fields = {
+        "span_regressions": "Number of span names that regressed",
+        "span_improvements": "Number of span names that improved",
+    }
+
+    def summarize(self, col: TraceCollection) -> dict[str, dict]:
+        """Returns {span_name: {count, durations, costs, tokens, errors}} for all spans."""
+        from collections import defaultdict
+
+        by_name: dict[str, dict] = defaultdict(
+            lambda: {"durations": [], "costs": [], "tokens": [], "errors": 0, "count": 0},
+        )
+        for t in col.all_traces():
+            for s in t.spans:
+                entry = by_name[s.name]
+                entry["count"] += 1
+                entry["durations"].append(span_duration_s(s))
+                entry["costs"].append(span_cost(s))
+                entry["tokens"].append(span_input_tokens(s) + span_output_tokens(s))
+                if span_is_error(s):
+                    entry["errors"] += 1
+        return dict(by_name)
+
+    def compare(self, baseline: dict, current: dict) -> Observation:
+        warnings: list[str] = []
+        matched_names = sorted(set(baseline) & set(current))
+
+        if not matched_names:
+            return Observation(
+                name=self.name,
+                description=self.description,
+                direction=Direction.NA,
+                baseline=baseline,
+                current=current,
+                formatted="no span names matched between datasets",
+                warnings=warnings,
+            )
+
+        regressions: list[str] = []
+        improvements: list[str] = []
+        unchanged: list[str] = []
+        detail_lines: list[str] = []
+        per_span: dict[str, dict] = {}
+
+        for span_name in matched_names:
+            b, c = baseline[span_name], current[span_name]
+            b_count, c_count = b["count"], c["count"]
+
+            b_med_dur = _median(b["durations"])
+            c_med_dur = _median(c["durations"])
+            b_med_cost = _median(b["costs"])
+            c_med_cost = _median(c["costs"])
+            b_med_tok = _median([float(t) for t in b["tokens"]])
+            c_med_tok = _median([float(t) for t in c["tokens"]])
+            b_err = b["errors"] / b_count if b_count else 0
+            c_err = c["errors"] / c_count if c_count else 0
+
+            dur_delta = _pct_delta(b_med_dur, c_med_dur) if b_med_dur else 0
+            cost_delta = _pct_delta(b_med_cost, c_med_cost) if b_med_cost else 0
+            tok_delta = _pct_delta(b_med_tok, c_med_tok) if b_med_tok else 0
+            err_delta_pp = (c_err - b_err) * 100
+
+            # Classify: any significant worsening = regression.
+            # For duration/cost/tokens: increase = worse. For errors: increase = worse.
+            threshold = self.noise_threshold
+            is_regressed = (
+                dur_delta > threshold
+                or cost_delta > threshold
+                or tok_delta > threshold
+                or err_delta_pp > 1.0
+            )
+            is_improved = (
+                not is_regressed
+                and (
+                    dur_delta < -threshold
+                    or cost_delta < -threshold
+                    or tok_delta < -threshold
+                    or err_delta_pp < -1.0
+                )
+            )
+
+            if is_regressed:
+                regressions.append(span_name)
+            elif is_improved:
+                improvements.append(span_name)
+            else:
+                unchanged.append(span_name)
+
+            # Build detail lines — one headline, then sub-lines per dimension.
+            badge = "▼" if is_regressed else ("▲" if is_improved else "≈")
+            detail_lines.append(f"{badge} {span_name}")
+
+            if b_med_dur or c_med_dur:
+                sign = "+" if dur_delta >= 0 else ""
+                detail_lines.append(
+                    f"  {b_med_dur:.1f}s → {c_med_dur:.1f}s duration"
+                    f"  {sign}{dur_delta:.0f}%"
+                )
+            if b_med_cost or c_med_cost:
+                sign = "+" if cost_delta >= 0 else ""
+                detail_lines.append(
+                    f"  ${b_med_cost:.4f} → ${c_med_cost:.4f} cost"
+                    f"  {sign}{cost_delta:.0f}%"
+                )
+            if b_med_tok or c_med_tok:
+                sign = "+" if tok_delta >= 0 else ""
+                detail_lines.append(
+                    f"  {b_med_tok:,.0f} → {c_med_tok:,.0f} tokens"
+                    f"  {sign}{tok_delta:.0f}%"
+                )
+            if b_err or c_err:
+                sign = "+" if err_delta_pp >= 0 else ""
+                detail_lines.append(
+                    f"  err {b_err:.0%} → {c_err:.0%}"
+                    f"  {sign}{err_delta_pp:.1f} pp"
+                )
+
+            detail_lines.append(f"  n={b_count} → {c_count} spans")
+
+            small = min(b_count, c_count)
+            if small < _MIN_N:
+                detail_lines.append(
+                    f"  ! only {small} spans — may be unreliable"
+                )
+
+            per_span[span_name] = {
+                "baseline": {
+                    "count": b_count,
+                    "median_duration": b_med_dur,
+                    "median_cost": b_med_cost,
+                    "median_tokens": b_med_tok,
+                    "error_rate": b_err,
+                },
+                "current": {
+                    "count": c_count,
+                    "median_duration": c_med_dur,
+                    "median_cost": c_med_cost,
+                    "median_tokens": c_med_tok,
+                    "error_rate": c_err,
+                },
+                "direction": "regressed" if is_regressed else (
+                    "improved" if is_improved else "unchanged"
+                ),
+            }
+
+        n_matched = len(matched_names)
+        n_reg = len(regressions)
+        n_imp = len(improvements)
+        formatted = (
+            f"{n_matched} span names matched — "
+            f"✓ {n_imp} improved, ✗ {n_reg} regressed"
+        )
+
+        # Don't assign aggregate direction — a single expensive span regression
+        # can outweigh many small improvements. Let the detail speak.
+        if n_reg > 0 and n_imp > 0:
+            direction = Direction.INCONCLUSIVE
+        elif n_reg > 0:
+            direction = Direction.DEGRADATION
+        elif n_imp > 0:
+            direction = Direction.UPGRADE
+        else:
+            direction = Direction.SAME
+
+        return Observation(
+            name=self.name,
+            description=self.description,
+            direction=direction,
+            baseline=baseline,
+            current=current,
+            delta=None,
+            formatted=formatted,
+            detail_lines=detail_lines,
+            metadata={
+                "matched": n_matched,
+                "n_regressions": n_reg,
+                "n_improvements": n_imp,
+                "regressions": regressions,
+                "improvements": improvements,
+                "per_span": per_span,
+            },
+            warnings=warnings,
+        )
+
+    def threshold_fields(self, result: Observation) -> dict[str, float]:
+        return {
+            "span_regressions": result.metadata.get("n_regressions", 0),
+            "span_improvements": result.metadata.get("n_improvements", 0),
+        }
+
+
 # ── Default metric set ─────────────────────────────────────────────────────────
 
 DEFAULT_METRICS: list[ComparisonMetric] = [
     SuccessRateMetric(),
-    PerTaskMetric(),
     CostMetric(),
     StepsMetric(),
     DurationMetric(),
@@ -1049,6 +1270,8 @@ DEFAULT_METRICS: list[ComparisonMetric] = [
     TokenUsageMetric(),
     TokenEfficiencyMetric(),
     CostQualityMetric(),
+    PerTaskMetric(),
+    SpanBreakdownMetric(),
 ]
 
 

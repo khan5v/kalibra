@@ -2,7 +2,7 @@
 
 Regression detection and CI quality gates for AI agents.
 
-You change a prompt, swap a model, or refactor a tool — did the agent get better or worse? Kalibra compares two runs and tells you, with statistical rigor.
+You change a prompt, swap a model, or refactor a tool — did the agent get better or worse? Kalibra compares two runs and tells you, with statistical rigor — at both trace and span level.
 
 ## Quickstart
 
@@ -22,17 +22,33 @@ kalibra compare \
   Kalibra Compare
   ──────────────────────────────────────────────────────────
   Baseline        30 traces   Current        30 traces
-  Direction ▲ IMPROVED
+  Direction ~ MIXED
+
+  Trace metrics
 
   ▲ Success rate    13.3% → 46.7%  +33.3 pp   (p=0.005)
-  ▲ Cost            $0.111 → $0.079 median     -29.2%  CI [-46%, -12%]
-  ▲ Steps           14 → 10 steps/trace        -28.6%
-  ▲ Duration        48.2s → 40.8s median       -15.4%
-  ▲ Token usage     24,772 → 17,153 median     -30.8%
+  ▲ Cost            $0.111 → $0.079 median  -29.2%
+  ▲ Steps           14 → 10 median  -28.6%
+  ▲ Duration        48.2s → 40.8s median  -15.4%
+  ▲ Token usage     24,772 → 17,153 median  -30.8%
+  ≈ Token eff.      13,612 → 13,034 tokens/success  -4.2%
   ▲ Cost / quality  $0.82 → $0.19 per success  -76.8%
-  ...
+
+  Trace breakdown
+
+  ▲ Per trace       10 matched — ✓ 4 improved, ✗ 0 regressed
+
+  Span breakdown
+
+  ~ Per span        10 matched — ✓ 4 improved, ✗ 6 regressed
 
   ──────────────────────────────────────────────────────────
+```
+
+Add `-v` for full detail — per-span duration/cost/token/error breakdowns, confidence intervals, per-task outcome changes:
+
+```bash
+kalibra compare --baseline examples/sample-baseline.jsonl --current examples/sample-current.jsonl -v
 ```
 
 ---
@@ -45,27 +61,7 @@ Generate a `kalibra.yml` config interactively:
 kalibra init
 ```
 
-```
-  Kalibra Setup
-  ──────────────────────────────────────────────────────────
-
-  Where are your traces?
-    1. langfuse
-    2. langsmith
-    3. braintrust
-    4. Local JSONL files
-
-  Choose: 1
-  langfuse project name: my-agent
-
-  Baseline tags: production,v1.2
-  Current tags: production,v1.3
-
-  ──────────────────────────────────────────────────────────
-  ✓ Created kalibra.yml
-```
-
-This generates a complete config with all metrics and starter quality gates:
+This generates a complete config with all 11 metrics and starter quality gates:
 
 ```yaml
 # kalibra.yml
@@ -82,19 +78,23 @@ current:
   tags: [production, v1.3]
 
 metrics:
-  - success_rate
-  - per_task
-  - cost
-  - steps
-  - duration
-  - token_usage
-  - token_efficiency
-  - cost_quality
+  - success_rate        # task pass/fail rate + significance test
+  - cost                # cost per trace — median, avg, total
+  - steps               # steps per task — median and avg
+  - duration            # latency — median, avg, P95
+  - tool_error_rate     # fraction of spans that error
+  - path_distribution   # execution path similarity
+  - token_usage         # token consumption — in/out/total
+  - token_efficiency    # tokens per successful task
+  - cost_quality        # cost per success
+  - per_task            # trace breakdown — per-task regressions
+  - span_breakdown      # span breakdown — per-step regressions
 
 require:
   - success_rate_delta >= -5
   - regressions <= 10
   - cost_delta_pct <= 30
+  - span_regressions <= 3
 ```
 
 Set your credentials and run:
@@ -129,10 +129,6 @@ sources:
     project: my-agent
     since: 7d
     tags: [production, v2]
-  staging:
-    source: braintrust
-    project: staging-agent
-    since: 1d
 
 baseline: prod-v1
 current: prod-v2
@@ -141,13 +137,7 @@ current: prod-v2
 Pull a named source directly:
 
 ```bash
-kalibra pull @staging
-```
-
-Or override from the command line:
-
-```bash
-kalibra compare --baseline prod-v1 --current staging
+kalibra pull @prod-v1
 ```
 
 ### Mixed sources
@@ -172,8 +162,9 @@ Gates are set in `kalibra.yml` under `require:`. Comparison fails (exit 1) if an
 ```yaml
 require:
   - success_rate_delta >= -2    # max 2 pp success rate drop
-  - regressions <= 5            # max 5 tasks flipped
+  - regressions <= 5            # max 5 traces flipped
   - cost_delta_pct <= 20        # max 20% cost increase
+  - span_regressions <= 3       # max 3 span names regressed
 ```
 
 See all available threshold fields:
@@ -194,14 +185,9 @@ Typos are caught early with suggestions:
 `--baseline` / `--current` override the config populations. `--require` replaces config gates. `--config` switches to a different config file.
 
 ```bash
-# Override current to a different source
-kalibra compare --current staging
-
-# Replace gates for this run only
-kalibra compare --require "success_rate_delta >= -10"
-
-# Use a different config
-kalibra compare --config config/examples/ci-gate.yml
+kalibra compare --current staging                          # override source
+kalibra compare --require "success_rate_delta >= -10"      # replace gates
+kalibra compare --config config/examples/ci-gate.yml       # different config
 ```
 
 ### Field mappings
@@ -212,8 +198,8 @@ If `kalibra inspect` shows missing data, map your trace fields:
 fields:
   trace_id: uuid                  # which field identifies each trace
   task_id: braintrust.task_id     # per-task regression matching
-  outcome: metadata.result        # success/failure detection
-  cost: agent_cost.total_cost     # cost metric source (supports nested paths)
+  outcome: task_status.evaluation # success/failure detection (handles booleans)
+  cost: agent_cost.total_cost     # cost source (supports nested paths)
   input_tokens: key_stats.input_tokens
   output_tokens: key_stats.output_tokens
 ```
@@ -222,7 +208,7 @@ Nested JSON strings are auto-parsed — `"stats": "{\"tokens\": 500}"` becomes `
 
 ### Inspect your data
 
-See what's in a trace file and what metrics will work:
+See what's in a trace file, what metrics will work, and what config to add:
 
 ```bash
 kalibra inspect cached_sources/baseline.jsonl
@@ -240,6 +226,37 @@ kalibra inspect cached_sources/baseline.jsonl
 | **Local JSONL** | No auth needed |
 
 All remote requests retry with exponential backoff on rate limits and server errors.
+
+---
+
+## Metrics
+
+11 built-in metrics across trace and span levels. Use `kalibra compare --metrics` for an interactive reference.
+
+### Trace metrics
+
+| Metric | What it measures | Key threshold fields |
+|---|---|---|
+| **success_rate** | Pass/fail rate + z-test | `success_rate_delta`, `success_rate` |
+| **cost** | Cost per trace — median, avg, total | `cost_delta_pct`, `total_cost`, `avg_cost` |
+| **steps** | Steps per trace — median and avg | `steps_delta_pct`, `avg_steps`, `median_steps` |
+| **duration** | Latency — median, avg, P95 | `duration_delta_pct`, `duration_p95_delta_pct` |
+| **tool_error_rate** | Span error fraction | `tool_error_rate_delta` |
+| **path_distribution** | Execution path similarity | `path_jaccard` |
+| **token_usage** | Token consumption — in/out/total | `token_delta_pct`, `total_tokens`, `avg_tokens` |
+| **token_efficiency** | Tokens per successful task | `token_efficiency_delta_pct` |
+| **cost_quality** | Cost per success | `cost_quality_delta_pct`, `cost_per_success` |
+
+### Breakdown metrics
+
+| Metric | What it measures | Key threshold fields |
+|---|---|---|
+| **per_task** | Per-trace regressions and improvements | `regressions`, `improvements` |
+| **span_breakdown** | Per-span regressions — duration, cost, tokens, errors | `span_regressions`, `span_improvements` |
+
+**Statistical methods**: Success rate uses a two-proportion z-test. Continuous metrics include bootstrap 95% CIs. Install `kalibra[stats]` for Mann-Whitney U significance tests.
+
+**Compact vs verbose**: Default output shows one line per metric. Add `-v` for full detail — per-span breakdowns, per-task outcome changes, confidence intervals, p-values.
 
 ---
 
@@ -265,6 +282,7 @@ require:
   - success_rate_delta >= -2
   - regressions <= 5
   - cost_delta_pct <= 20
+  - span_regressions <= 3
 ```
 
 <details>
@@ -302,13 +320,10 @@ jobs:
 
 </details>
 
-### Evaluate a model swap
-
-Compare cost-effectiveness when switching models — no hard gates, just data.
+### Compare models
 
 ```bash
-kalibra compare --baseline gpt4-run --current gpt4o-run \
-  --config config/examples/model-comparison.yml
+kalibra compare --baseline gpt4-run --current gpt4o-run -v
 ```
 
 ### Use from Python
@@ -325,32 +340,9 @@ print("passed:", result.thresholds_passed)
 
 ---
 
-## Metrics
-
-All 10 built-in metrics run by default. Use `kalibra compare --metrics` for an interactive reference.
-
-| Metric | What it measures | Key threshold fields |
-|---|---|---|
-| **success_rate** | Pass/fail rate + z-test | `success_rate_delta`, `success_rate` |
-| **per_task** | Tasks that regressed or improved | `regressions`, `improvements` |
-| **cost** | Cost per trace — median, avg, total | `cost_delta_pct`, `total_cost`, `avg_cost` |
-| **steps** | Steps per trace — median and avg | `steps_delta_pct`, `avg_steps`, `median_steps` |
-| **duration** | Latency — median, avg, P95 | `duration_delta_pct`, `duration_p95_delta_pct`, `total_duration` |
-| **token_usage** | Token consumption — in/out/total | `token_delta_pct`, `total_tokens`, `avg_tokens` |
-| **token_efficiency** | Tokens per successful task | `token_efficiency_delta_pct` |
-| **cost_quality** | Cost per success | `cost_quality_delta_pct`, `cost_per_success` |
-| **tool_error_rate** | Tool call error fraction | `tool_error_rate_delta` |
-| **path_distribution** | Execution path similarity | `path_jaccard` |
-
-**Statistical methods**: Success rate uses a two-proportion z-test. Continuous metrics include bootstrap 95% CIs. Install `kalibra[stats]` for Mann-Whitney U significance tests.
-
----
-
 ## Custom metrics
 
 Drop a `kalibra_metrics.py` in your project root — auto-discovered, no config needed. Implement `summarize()`, `compare()`, and `threshold_fields()` on a `ComparisonMetric` subclass, and export a `METRICS` list. Custom metrics appear in `kalibra compare --metrics` and work with `--require` like built-ins.
-
-See the built-in metrics in `src/kalibra/metrics.py` for reference.
 
 ---
 
@@ -361,22 +353,10 @@ kalibra init                          # create kalibra.yml interactively
 kalibra inspect traces.jsonl          # show data coverage and available fields
 kalibra pull @source-name             # pull traces from a named source
 kalibra compare --metrics             # list all metrics and threshold fields
+kalibra compare -v                    # verbose — full per-span/per-task detail
 kalibra compare --format markdown     # output as GitHub PR comment
 kalibra compare --format json         # machine-readable output
 ```
-
----
-
-## Synthetic trace generator
-
-Generate test traces for Langfuse, LangSmith, or Braintrust:
-
-```bash
-python3 scripts/synth_traces.py --mode baseline --target langfuse
-python3 scripts/synth_traces.py --mode current  --target langfuse
-```
-
-Supports `--target langsmith`, `--target braintrust`, `--count N`, and `--tags a,b,c`.
 
 ---
 

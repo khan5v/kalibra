@@ -212,6 +212,8 @@ def _rollup_direction(observations: dict[str, Observation]) -> Direction:
     statuses = {obs.direction for obs in observations.values() if obs.direction != Direction.NA}
     if not statuses:
         return Direction.NA
+    if Direction.INCONCLUSIVE in statuses:
+        return Direction.INCONCLUSIVE
     if Direction.DEGRADATION in statuses and Direction.UPGRADE in statuses:
         return Direction.INCONCLUSIVE
     if Direction.DEGRADATION in statuses:

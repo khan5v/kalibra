@@ -52,12 +52,17 @@ class TestTerminalReport:
         text = render(_make_result(), "terminal")
         assert "Direction" in text
 
-    def test_metrics_have_detail_lines(self):
-        text = render(_make_result(), "terminal")
+    def test_metrics_have_detail_lines_in_verbose(self):
+        text = render(_make_result(), "terminal", verbose=True)
         # Cost should show median on headline and avg/total as sub-lines
         assert "median" in text
         assert "avg" in text
         assert "total" in text
+
+    def test_compact_omits_detail_lines(self):
+        text = render(_make_result(), "terminal", verbose=False)
+        assert "median" in text  # headline still shows median
+        assert "95% CI" not in text  # detail lines hidden
 
     def test_no_gates_footer(self):
         text = render(_make_result(), "terminal")

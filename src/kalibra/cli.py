@@ -61,11 +61,13 @@ def init(force):
               help="Span attribute for cost (e.g. custom.cost_usd).")
 @click.option("--task-id", default=None,
               help="Metadata field for per-task matching (e.g. braintrust.task_id).")
+@click.option("-v", "--verbose", is_flag=True, default=False,
+              help="Show detailed output — per-span breakdown, CIs, p-values.")
 @click.option("--metrics", "show_metrics", is_flag=True, default=False,
               help="List all available metrics and their --require threshold fields, then exit.")
 def compare(baseline, current, out_format, require, config_path, sources_dir,
             output, refresh, cache_dir, trace_id_field, outcome, cost_field,
-            task_id, show_metrics):
+            task_id, verbose, show_metrics):
     """Compare two trace datasets — regression detection, statistical diff.
 
     \b
@@ -89,7 +91,7 @@ def compare(baseline, current, out_format, require, config_path, sources_dir,
         require=require, config_path=config_path, sources_dir=sources_dir,
         output=output, refresh=refresh, cache_dir=cache_dir,
         trace_id_field=trace_id_field, outcome=outcome,
-        cost_field=cost_field, task_id=task_id,
+        cost_field=cost_field, task_id=task_id, verbose=verbose,
     )
 
 
