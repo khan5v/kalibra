@@ -57,6 +57,7 @@ class PopulationConfig:
 class FieldsConfig:
     """Maps trace/span fields to what Kalibra metrics expect."""
 
+    trace_id: str | None = None
     task_id: str | None = None
     outcome: str | None = None
     cost: str | None = None
@@ -66,6 +67,7 @@ class FieldsConfig:
         if not data or not isinstance(data, dict):
             return cls()
         return cls(
+            trace_id=data.get("trace_id"),
             task_id=data.get("task_id"),
             outcome=data.get("outcome"),
             cost=data.get("cost"),

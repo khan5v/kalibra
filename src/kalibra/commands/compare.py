@@ -64,6 +64,7 @@ def run_compare(
     output: str | None,
     refresh: bool,
     cache_dir: str,
+    trace_id_field: str | None,
     outcome: str | None,
     cost_field: str | None,
     task_id: str | None,
@@ -98,6 +99,8 @@ def run_compare(
     config = CompareConfig.load(config_path)
 
     # ── CLI overrides ─────────────────────────────────────────────────────
+    if trace_id_field:
+        config.fields.trace_id = trace_id_field
     if task_id:
         config.fields.task_id = task_id
     if outcome:
@@ -165,11 +168,17 @@ def run_compare(
     from kalibra.converters import load_traces
     from kalibra.converters.base import apply_overrides
 
-    click.echo(f"Loading {baseline_path}")
-    b_traces = load_traces(baseline_path)
+    trace_id_field = config.fields.trace_id
 
-    click.echo(f"Loading {current_path}")
-    c_traces = load_traces(current_path)
+    try:
+        click.echo(f"Loading {baseline_path}")
+        b_traces = load_traces(baseline_path, trace_id_field=trace_id_field)
+
+        click.echo(f"Loading {current_path}")
+        c_traces = load_traces(current_path, trace_id_field=trace_id_field)
+    except ValueError as exc:
+        display.load_error(baseline_path, str(exc))
+        raise SystemExit(1) from None
 
     # Apply field overrides from config (outcome, cost).
     if config.fields.outcome or config.fields.cost:

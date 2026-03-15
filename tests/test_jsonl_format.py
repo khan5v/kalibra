@@ -253,14 +253,27 @@ class TestErrors:
     def test_missing_trace_id(self, tmp_path):
         p = tmp_path / "bad.jsonl"
         p.write_text('{"outcome": "success"}\n')
-        with pytest.raises(ValueError, match="missing required field 'trace_id'"):
+        with pytest.raises(ValueError, match="no trace ID field found"):
             load_json_traces(p)
 
-    def test_missing_trace_id_shows_example(self, tmp_path):
+    def test_missing_trace_id_shows_fields(self, tmp_path):
         p = tmp_path / "bad.jsonl"
         p.write_text('{"outcome": "success"}\n')
-        with pytest.raises(ValueError, match="trace_id.*Minimal example"):
+        with pytest.raises(ValueError, match="Available fields.*outcome"):
             load_json_traces(p)
+
+    def test_missing_trace_id_suggests_candidates(self, tmp_path):
+        p = tmp_path / "bad.jsonl"
+        p.write_text('{"uuid": "abc", "outcome": "success"}\n')
+        with pytest.raises(ValueError, match="might be the trace ID.*uuid"):
+            load_json_traces(p)
+
+    def test_custom_trace_id_field(self, tmp_path):
+        p = tmp_path / "bad.jsonl"
+        p.write_text('{"uuid": "t1", "outcome": "success"}\n')
+        traces = load_json_traces(p, trace_id_field="uuid")
+        assert len(traces) == 1
+        assert traces[0].trace_id == "t1"
 
     def test_invalid_outcome(self, tmp_path):
         p = tmp_path / "bad.jsonl"

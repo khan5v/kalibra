@@ -60,9 +60,26 @@ _RESERVED = _TRACE_FIELDS | _SPAN_FIELDS | _TIMING_FIELDS | set(_FRIENDLY_TO_ATT
 
 # ── Load ─────────────────────────────────────────────────────────────────────
 
-def load_json_traces(path: Path) -> list[Trace]:
-    """Load traces from a JSONL file. Auto-detects flat eval or flat span format."""
-    rows = _read_rows(path)
+def load_json_traces(
+    path: Path,
+    trace_id_field: str | None = None,
+) -> list[Trace]:
+    """Load traces from JSONL or JSON. Auto-detects format:
+
+    - Nested OTel traces (JSON array with ``spans`` containing ``child_spans``)
+    - Flat spans (JSONL, one row per span with ``span_id``)
+    - Flat evals (JSONL, one row per trace without ``span_id``)
+
+    Args:
+        trace_id_field: If set, use this field instead of ``trace_id``.
+    """
+    # Try nested OTel format first (JSON array of trace objects).
+    nested = _try_load_nested(path, trace_id_field=trace_id_field)
+    if nested is not None:
+        return nested
+
+    # Fall back to JSONL (flat eval or flat span).
+    rows = _read_rows(path, trace_id_field=trace_id_field)
     if not rows:
         return []
 
@@ -73,8 +90,14 @@ def load_json_traces(path: Path) -> list[Trace]:
     return _load_flat_evals(rows, path)
 
 
-def _read_rows(path: Path) -> list[dict]:
+def _read_rows(
+    path: Path,
+    trace_id_field: str | None = None,
+) -> list[dict]:
     """Parse JSONL into a list of dicts with clear error messages."""
+    # Which field to use as trace_id.
+    id_field = trace_id_field or "trace_id"
+
     rows = []
     with open(path) as f:
         for line_no, line in enumerate(f, 1):
@@ -86,21 +109,62 @@ def _read_rows(path: Path) -> list[dict]:
             except json.JSONDecodeError as exc:
                 _error(path, line_no, f"invalid JSON — {exc}", hint=(
                     "Each line must be a valid JSON object. Example:\n"
-                    '  {"trace_id": "task-1", "outcome": "success", "cost": 0.012}'
+                    '  {"trace_id": "task-1", "outcome": "success"}'
                 ))
 
             if not isinstance(d, dict):
-                _error(path, line_no, f"expected a JSON object, got {type(d).__name__}")
+                _error(
+                    path, line_no,
+                    f"expected a JSON object, got {type(d).__name__}",
+                )
 
-            if "trace_id" not in d:
-                _error(path, line_no, "missing required field 'trace_id'", hint=(
-                    "Every row needs a trace_id. Minimal example:\n"
-                    '  {"trace_id": "task-1", "outcome": "success"}'
-                ))
+            # Resolve trace ID: use configured field, remap to trace_id.
+            if id_field != "trace_id" and id_field in d:
+                d["trace_id"] = d[id_field]
+            elif "trace_id" not in d:
+                _trace_id_error(path, line_no, d, id_field)
 
             d["_line"] = line_no
             rows.append(d)
     return rows
+
+
+# Common ID-like field names to suggest when trace_id is missing.
+_LIKELY_ID_FIELDS = [
+    "uuid", "id", "instance_id", "task_name", "request_id",
+    "trace_id", "traj_id", "run_id", "session_id",
+]
+
+
+def _trace_id_error(
+    path: Path, line_no: int, row: dict, configured_field: str,
+) -> None:
+    """Raise a helpful error when trace_id can't be found."""
+    row_keys = [k for k in row.keys() if k != "_line"]
+
+    # Find fields that look like IDs.
+    candidates = [k for k in row_keys if k in _LIKELY_ID_FIELDS]
+    # Also check for fields ending in _id or _name.
+    for k in row_keys:
+        if (k.endswith("_id") or k.endswith("_name")) and k not in candidates:
+            candidates.append(k)
+
+    msg = f"no trace ID field found"
+    if configured_field != "trace_id":
+        msg += f" (looked for '{configured_field}' from config)"
+
+    hint_lines = [f"Available fields: {row_keys}"]
+    if candidates:
+        hint_lines.append(
+            f"These might be the trace ID: {candidates}"
+        )
+    hint_lines.append(
+        "Set in kalibra.yml:\n"
+        "  fields:\n"
+        f"    trace_id: {candidates[0] if candidates else '<field_name>'}"
+    )
+
+    _error(path, line_no, msg, hint="\n".join(hint_lines))
 
 
 def _detect_format(rows: list[dict], path: Path) -> str:
@@ -129,6 +193,203 @@ def _detect_format(rows: list[dict], path: Path) -> str:
                "  Flat span:  every row has span_id (one row per span)\n\n"
                "  If this is a flat-span file, add span_id to every row."
            ))
+
+
+# ── Nested OTel loader ───────────────────────────────────────────────────────
+
+# OpenInference attribute keys (used by TRAIL / Phoenix / Arize).
+_OI_TOKEN_PROMPT = "llm.token_count.prompt"
+_OI_TOKEN_COMPLETION = "llm.token_count.completion"
+_OI_MODEL = "llm.model_name"
+_OI_COST = "llm.cost.total"
+
+
+def _try_load_nested(
+    path: Path,
+    trace_id_field: str | None = None,
+) -> list[Trace] | None:
+    """Try to parse as a JSON array of nested OTel traces.
+
+    Returns None if the file isn't in nested format (falls through to JSONL).
+    """
+    try:
+        with open(path) as f:
+            first_char = f.read(1).strip()
+            if first_char != "[":
+                return None
+            f.seek(0)
+            data = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None
+
+    if not isinstance(data, list) or not data:
+        return None
+
+    # Check if it looks like nested OTel: objects with trace_id + "spans".
+    first = data[0]
+    if not isinstance(first, dict):
+        return None
+    id_field = trace_id_field or "trace_id"
+    has_id = id_field in first or "trace_id" in first
+    if not has_id or "spans" not in first:
+        return None
+    # Remap if using a custom field.
+    if id_field != "trace_id":
+        for item in data:
+            if isinstance(item, dict) and id_field in item:
+                item["trace_id"] = item[id_field]
+
+    return [_convert_nested_trace(t) for t in data if isinstance(t, dict)]
+
+
+def _convert_nested_trace(trace_data: dict) -> Trace:
+    """Convert a nested OTel trace (with child_spans) to a Kalibra Trace."""
+    trace_id = trace_data["trace_id"]
+    root_spans = trace_data.get("spans") or []
+
+    spans = []
+    for root in root_spans:
+        _flatten_span(root, trace_id, parent_id=None, out=spans)
+
+    spans.sort(key=lambda s: s.start_time)
+
+    # Detect outcome from status or errors.
+    outcome = None
+    for root in root_spans:
+        status = root.get("status_code", "").lower()
+        if status == "error":
+            outcome = "failure"
+            break
+
+    return Trace(
+        trace_id=trace_id,
+        spans=spans,
+        outcome=outcome,
+        metadata=_extract_nested_metadata(trace_data, root_spans),
+    )
+
+
+def _flatten_span(
+    span: dict, trace_id: str, parent_id: str | None, out: list,
+) -> None:
+    """Recursively flatten a nested span tree into a flat list."""
+    span_id = span.get("span_id", "")
+    name = span.get("span_name") or span.get("name") or "unknown"
+    attrs = dict(span.get("span_attributes") or {})
+
+    # Map OpenInference token/cost attributes to Kalibra's OTel keys.
+    prompt_tokens = attrs.pop(_OI_TOKEN_PROMPT, 0)
+    completion_tokens = attrs.pop(_OI_TOKEN_COMPLETION, 0)
+    attrs.pop("llm.token_count.total", None)  # derived, don't double-count
+    model = attrs.pop(_OI_MODEL, None)
+    cost = attrs.pop(_OI_COST, 0.0)
+
+    # Also check for standard OTel GenAI keys (some exporters use these).
+    if not prompt_tokens:
+        prompt_tokens = attrs.pop(GEN_AI_INPUT_TOKENS, 0)
+    if not completion_tokens:
+        completion_tokens = attrs.pop(GEN_AI_OUTPUT_TOKENS, 0)
+    if not model:
+        model = attrs.pop(GEN_AI_MODEL, None)
+    if not cost:
+        cost = attrs.pop(AF_COST, 0.0)
+
+    otel_attrs = {
+        GEN_AI_INPUT_TOKENS: int(prompt_tokens or 0),
+        GEN_AI_OUTPUT_TOKENS: int(completion_tokens or 0),
+        AF_COST: float(cost or 0.0),
+    }
+    if model:
+        otel_attrs[GEN_AI_MODEL] = model
+
+    # Forward remaining span_attributes.
+    for k, v in attrs.items():
+        if v is not None:
+            otel_attrs[k] = v
+
+    # Parse timing.
+    start_ns, end_ns = _parse_nested_timing(span)
+
+    is_error = span.get("status_code", "").lower() == "error"
+
+    out.append(make_span(
+        name=name,
+        trace_id=trace_id,
+        span_id=span_id,
+        parent_span_id=parent_id,
+        start_ns=start_ns,
+        end_ns=end_ns,
+        attributes=otel_attrs,
+        error=is_error,
+    ))
+
+    for child in span.get("child_spans") or []:
+        _flatten_span(child, trace_id, parent_id=span_id, out=out)
+
+
+def _parse_nested_timing(span: dict) -> tuple[int, int]:
+    """Parse start/end from nested span. Handles ISO timestamps and durations."""
+    ts = span.get("timestamp", "")
+    duration_str = span.get("duration", "")
+
+    start_ns = 0
+    if ts:
+        start_ns = _iso_to_ns(ts)
+
+    end_ns = start_ns
+    if duration_str:
+        dur_ns = _parse_iso_duration(duration_str)
+        end_ns = start_ns + dur_ns
+    elif span.get("end_time"):
+        end_ns = _iso_to_ns(span["end_time"])
+
+    return start_ns, end_ns
+
+
+def _iso_to_ns(ts: str) -> int:
+    """Parse ISO 8601 timestamp to nanoseconds."""
+    try:
+        # Handle both 'Z' and '+00:00' suffixes.
+        ts = ts.rstrip("Z")
+        if "." in ts:
+            dt = datetime.strptime(ts[:26], "%Y-%m-%dT%H:%M:%S.%f")
+        else:
+            dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S")
+        dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1e9)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _parse_iso_duration(dur: str) -> int:
+    """Parse ISO 8601 duration (e.g. PT1M24.635189S) to nanoseconds."""
+    if not dur.startswith("PT"):
+        return 0
+    dur = dur[2:]  # strip "PT"
+    total_seconds = 0.0
+    # Parse hours, minutes, seconds.
+    for unit, multiplier in [("H", 3600), ("M", 60), ("S", 1)]:
+        if unit in dur:
+            val_str, dur = dur.split(unit, 1)
+            total_seconds += float(val_str) * multiplier
+    return int(total_seconds * 1e9)
+
+
+def _extract_nested_metadata(
+    trace_data: dict, root_spans: list[dict],
+) -> dict:
+    """Extract trace metadata from nested OTel format."""
+    meta: dict = {}
+    if root_spans:
+        root = root_spans[0]
+        svc = root.get("service_name", "")
+        if svc:
+            meta["service"] = svc
+        res = root.get("resource_attributes") or {}
+        for k, v in res.items():
+            if v is not None:
+                meta[f"resource.{k}"] = v
+    return meta
 
 
 # ── Flat eval loader ─────────────────────────────────────────────────────────

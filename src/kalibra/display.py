@@ -63,6 +63,35 @@ def connector_error(source: str, message: str) -> None:
     click.echo()
 
 
+def load_error(path: str, message: str) -> None:
+    """Render a trace loading error in styled format."""
+    header("Kalibra", "failed to load traces")
+    # The message from the loader includes path:line info.
+    # Split on newlines and render each part.
+    lines = message.strip().splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Lines with path:line info are the headline.
+        if "—" in line and (":" in line.split("—")[0]):
+            click.echo(f"  {click.style('▸', fg='yellow')} {line}")
+        # "Available fields" / "These might be" are highlights.
+        elif line.startswith("Available fields"):
+            click.echo(f"    {click.style(line, fg='white')}")
+        elif line.startswith("These might be"):
+            click.echo(f"    {click.style(line, fg='cyan')}")
+        # Config suggestions.
+        elif line.startswith("Set in") or line.startswith("fields:"):
+            click.echo(f"    {click.style(line, dim=True)}")
+        elif line.startswith("trace_id:"):
+            click.echo(f"      {click.style(line, fg='cyan')}")
+        else:
+            click.echo(f"    {click.style(line, dim=True)}")
+    click.echo(f"  {bar()}")
+    click.echo()
+
+
 def no_traces_warning(source: str, project: str, tags: list[str] | None, session_id: str | None,
                       since: str) -> None:
     """Render a 'no traces found' warning with hints."""

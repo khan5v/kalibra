@@ -16,10 +16,15 @@ def run_inspect(path: str, config_path: str | None) -> None:
     from kalibra.converters.generic import load_json_traces
     from kalibra.metrics import DEFAULT_METRICS, _extract_task_id_from_trace
 
+    # Load config first — needed for trace_id field mapping.
+    config = CompareConfig.load(config_path)
+
     try:
-        traces = load_json_traces(Path(path))
+        traces = load_json_traces(
+            Path(path), trace_id_field=config.fields.trace_id,
+        )
     except ValueError as exc:
-        click.echo(f"\nFailed to load: {exc}", err=True)
+        display.load_error(path, str(exc))
         raise SystemExit(1) from None
 
     n = len(traces)
@@ -29,8 +34,7 @@ def run_inspect(path: str, config_path: str | None) -> None:
 
     n_spans = sum(len(t.spans) for t in traces)
 
-    # Determine active metrics from config.
-    config = CompareConfig.load(config_path)
+    # Determine active metrics.
     active = resolve_metrics(config, DEFAULT_METRICS)
     active_names = {m.name for m in active}
 

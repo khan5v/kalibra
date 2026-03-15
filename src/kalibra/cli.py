@@ -53,6 +53,8 @@ def init(force):
               help="Re-pull @name sources even if a local cache exists.")
 @click.option("--cache-dir", default=DEFAULT_CACHE_DIR, type=click.Path(),
               help="Directory for cached pulled traces.", show_default=True)
+@click.option("--trace-id", "trace_id_field", default=None,
+              help="Field name to use as trace ID (e.g. uuid, task_name).")
 @click.option("--outcome", default=None,
               help="Metadata field for outcome detection (e.g. metadata.result).")
 @click.option("--cost", "cost_field", default=None,
@@ -62,7 +64,8 @@ def init(force):
 @click.option("--metrics", "show_metrics", is_flag=True, default=False,
               help="List all available metrics and their --require threshold fields, then exit.")
 def compare(baseline, current, out_format, require, config_path, sources_dir,
-            output, refresh, cache_dir, outcome, cost_field, task_id, show_metrics):
+            output, refresh, cache_dir, trace_id_field, outcome, cost_field,
+            task_id, show_metrics):
     """Compare two trace datasets — regression detection, statistical diff.
 
     \b
@@ -85,7 +88,8 @@ def compare(baseline, current, out_format, require, config_path, sources_dir,
         baseline=baseline, current=current, out_format=out_format,
         require=require, config_path=config_path, sources_dir=sources_dir,
         output=output, refresh=refresh, cache_dir=cache_dir,
-        outcome=outcome, cost_field=cost_field, task_id=task_id,
+        trace_id_field=trace_id_field, outcome=outcome,
+        cost_field=cost_field, task_id=task_id,
     )
 
 
