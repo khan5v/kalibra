@@ -13,6 +13,8 @@ from kalibra.converters.base import (
     GEN_AI_INPUT_TOKENS,
     GEN_AI_MODEL,
     GEN_AI_OUTPUT_TOKENS,
+    OUTCOME_FAILURE,
+    OUTCOME_SUCCESS,
     Trace,
     make_span,
 )
@@ -413,22 +415,22 @@ class BraintrustConnector:
           3. output field with keyword heuristic → mapped
         """
         if root.get("error") is not None:
-            return "failure"
+            return OUTCOME_FAILURE
 
         scores = root.get("scores") or {}
         for score_name, score_val in scores.items():
             if score_val is None:
                 continue
             if score_name.lower() in ("correctness", "accuracy", "pass", "success"):
-                return "success" if float(score_val) >= 0.5 else "failure"
+                return OUTCOME_SUCCESS if float(score_val) >= 0.5 else OUTCOME_FAILURE
 
         output = root.get("output")
         if output is not None:
             out_str = str(output).lower()
             if "success" in out_str:
-                return "success"
+                return OUTCOME_SUCCESS
             if any(kw in out_str for kw in ("failure", "error", "failed", "exception")):
-                return "failure"
+                return OUTCOME_FAILURE
 
         return None
 

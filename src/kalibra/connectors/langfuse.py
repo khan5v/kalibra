@@ -14,6 +14,8 @@ from kalibra.converters.base import (
     GEN_AI_INPUT_TOKENS,
     GEN_AI_MODEL,
     GEN_AI_OUTPUT_TOKENS,
+    OUTCOME_FAILURE,
+    OUTCOME_SUCCESS,
     Trace,
     make_span,
 )
@@ -174,9 +176,9 @@ class LangfuseConnector:
             # Heuristic: output field contains outcome keywords
             out = str(raw["output"]).lower()
             if "success" in out:
-                outcome = "success"
+                outcome = OUTCOME_SUCCESS
             elif "failure" in out or "error" in out or "failed" in out or "exception" in out:
-                outcome = "failure"
+                outcome = OUTCOME_FAILURE
 
         spans = []
         for obs in observations:

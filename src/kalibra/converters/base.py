@@ -12,6 +12,11 @@ from dataclasses import dataclass, field
 from opentelemetry.sdk.trace import ReadableSpan, Status, StatusCode
 from opentelemetry.trace import SpanContext, TraceFlags
 
+# ── Outcome values ────────────────────────────────────────────────────────────
+
+OUTCOME_SUCCESS = "success"
+OUTCOME_FAILURE = "failure"
+
 # ── OTel GenAI semantic convention attribute keys ─────────────────────────────
 
 GEN_AI_MODEL         = "gen_ai.request.model"
@@ -164,13 +169,13 @@ def _apply_outcome_override(traces: list[Trace], cfg) -> None:
             continue
         # Handle booleans directly: True = success, False = failure.
         if isinstance(val, bool):
-            trace.outcome = "success" if val else "failure"
+            trace.outcome = OUTCOME_SUCCESS if val else OUTCOME_FAILURE
             continue
         val_str = str(val).lower().strip()
         if any(s.lower() == val_str for s in cfg.success):
-            trace.outcome = "success"
+            trace.outcome = OUTCOME_SUCCESS
         elif any(s.lower() == val_str for s in cfg.failure):
-            trace.outcome = "failure"
+            trace.outcome = OUTCOME_FAILURE
 
 
 def _apply_cost_override(traces: list[Trace], cfg) -> None:

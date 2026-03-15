@@ -173,8 +173,11 @@ def pull_summary(path: str | None = None, traces=None) -> None:
             return
     if not traces:
         return
+
+    from kalibra.converters.base import OUTCOME_SUCCESS
+
     n = len(traces)
-    successes = sum(1 for t in traces if t.outcome == "success")
+    successes = sum(1 for t in traces if t.outcome == OUTCOME_SUCCESS)
     unset = sum(1 for t in traces if t.outcome is None)
     click.echo(f"  Success rate: {successes / n:.1%}")
     if unset == n:

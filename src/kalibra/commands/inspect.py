@@ -12,7 +12,13 @@ from kalibra import display
 def run_inspect(path: str, config_path: str | None) -> None:
     """Execute the inspect command."""
     from kalibra.config import CompareConfig, resolve_metrics
-    from kalibra.converters.base import span_cost, span_input_tokens, span_output_tokens
+    from kalibra.converters.base import (
+        OUTCOME_FAILURE,
+        OUTCOME_SUCCESS,
+        span_cost,
+        span_input_tokens,
+        span_output_tokens,
+    )
     from kalibra.converters.generic import load_json_traces
     from kalibra.metrics import DEFAULT_METRICS, _extract_task_id_from_trace
 
@@ -45,7 +51,7 @@ def run_inspect(path: str, config_path: str | None) -> None:
     active_names = {m.name for m in active}
 
     # ── Data coverage ─────────────────────────────────────────────────────
-    has_outcome = sum(1 for t in traces if t.outcome in ("success", "failure"))
+    has_outcome = sum(1 for t in traces if t.outcome in (OUTCOME_SUCCESS, OUTCOME_FAILURE))
     has_cost = sum(1 for t in traces if any(span_cost(s) > 0 for s in t.spans))
     has_tokens = sum(
         1 for t in traces

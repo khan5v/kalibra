@@ -12,7 +12,13 @@ from enum import Enum
 from typing import Any, ClassVar
 
 from kalibra.collection import TraceCollection
-from kalibra.converters.base import span_input_tokens, span_is_error, span_output_tokens
+from kalibra.converters.base import (
+    OUTCOME_FAILURE,
+    OUTCOME_SUCCESS,
+    span_input_tokens,
+    span_is_error,
+    span_output_tokens,
+)
 
 # Optional scipy for statistical tests on continuous metrics.
 try:
@@ -207,8 +213,8 @@ class SuccessRateMetric(ComparisonMetric):
 
     def summarize(self, col: TraceCollection) -> dict:
         traces = col.all_traces()
-        successes = sum(1 for t in traces if t.outcome == "success")
-        failures = sum(1 for t in traces if t.outcome == "failure")
+        successes = sum(1 for t in traces if t.outcome == OUTCOME_SUCCESS)
+        failures = sum(1 for t in traces if t.outcome == OUTCOME_FAILURE)
         with_outcome = successes + failures
         # Rate denominator is traces with a known outcome, not all traces.
         # Traces with outcome=None are excluded — they carry no signal.
@@ -309,7 +315,7 @@ class PerTaskMetric(ComparisonMetric):
         """Returns {task_id: outcome} for all traces with a known outcome."""
         outcomes: dict[str, str] = {}
         for t in col.all_traces():
-            if t.outcome in ("success", "failure"):
+            if t.outcome in (OUTCOME_SUCCESS, OUTCOME_FAILURE):
                 task_id = _extract_task_id_from_trace(t, self.task_id_field)
                 outcomes.setdefault(task_id, t.outcome)
         return outcomes
@@ -318,10 +324,12 @@ class PerTaskMetric(ComparisonMetric):
         warnings: list[str] = []
         matched = {t for t in baseline if t in current}
         regressions = sorted(
-            t for t in matched if baseline[t] == "success" and current[t] == "failure"
+            t for t in matched
+            if baseline[t] == OUTCOME_SUCCESS and current[t] == OUTCOME_FAILURE
         )
         improvements = sorted(
-            t for t in matched if baseline[t] == "failure" and current[t] == "success"
+            t for t in matched
+            if baseline[t] == OUTCOME_FAILURE and current[t] == OUTCOME_SUCCESS
         )
         formatted = (
             f"{len(matched):,} tasks matched — "
@@ -872,7 +880,7 @@ class TokenEfficiencyMetric(ComparisonMetric):
     _fields = {"token_efficiency_delta_pct": "Tokens-per-success change (%)"}
 
     def summarize(self, col: TraceCollection) -> dict:
-        successes = [t for t in col.all_traces() if t.outcome == "success"]
+        successes = [t for t in col.all_traces() if t.outcome == OUTCOME_SUCCESS]
         if not successes:
             return {"tokens_per_success": None, "n_successes": 0, "total_tokens": 0}
         total_tokens = sum(t.total_tokens for t in successes)
@@ -953,7 +961,7 @@ class CostQualityMetric(ComparisonMetric):
     def summarize(self, col: TraceCollection) -> dict:
         traces = col.all_traces()
         total_cost = sum(t.total_cost for t in traces)
-        successes = [t for t in traces if t.outcome == "success"]
+        successes = [t for t in traces if t.outcome == OUTCOME_SUCCESS]
         if not successes:
             return {
                 "cost_per_success": None,

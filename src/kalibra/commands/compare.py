@@ -7,8 +7,13 @@ from pathlib import Path
 import click
 
 from kalibra import display
-
-from kalibra.converters.base import AF_COST, GEN_AI_INPUT_TOKENS, GEN_AI_OUTPUT_TOKENS
+from kalibra.converters.base import (
+    AF_COST,
+    GEN_AI_INPUT_TOKENS,
+    GEN_AI_OUTPUT_TOKENS,
+    OUTCOME_FAILURE,
+    OUTCOME_SUCCESS,
+)
 
 CONFIG_FILENAME = "kalibra.yml"
 
@@ -48,13 +53,13 @@ def _apply_field_overrides(traces: list, config) -> None:
                 if val is None:
                     continue
                 if isinstance(val, bool):
-                    trace.outcome = "success" if val else "failure"
+                    trace.outcome = OUTCOME_SUCCESS if val else OUTCOME_FAILURE
                 else:
                     val_str = str(val).lower().strip()
                     if val_str in ("success", "true", "1", "pass"):
-                        trace.outcome = "success"
+                        trace.outcome = OUTCOME_SUCCESS
                     elif val_str in ("failure", "false", "0", "fail", "error"):
-                        trace.outcome = "failure"
+                        trace.outcome = OUTCOME_FAILURE
                 break
 
     # Token remapping — read from user-specified attributes, write to standard keys.

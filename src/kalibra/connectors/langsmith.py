@@ -14,6 +14,8 @@ from kalibra.converters.base import (
     GEN_AI_INPUT_TOKENS,
     GEN_AI_MODEL,
     GEN_AI_OUTPUT_TOKENS,
+    OUTCOME_FAILURE,
+    OUTCOME_SUCCESS,
     Trace,
     make_span,
 )
@@ -166,12 +168,12 @@ class LangSmithConnector:
         # Outcome from run error / feedback
         outcome = None
         if run.error:
-            outcome = "failure"
+            outcome = OUTCOME_FAILURE
         elif hasattr(run, "feedback_stats") and run.feedback_stats:
             # LangSmith stores feedback like {"score": {"avg": 1.0}}
             score = run.feedback_stats.get("score", {}).get("avg")
             if score is not None:
-                outcome = "success" if score >= 0.5 else "failure"
+                outcome = OUTCOME_SUCCESS if score >= 0.5 else OUTCOME_FAILURE
         else:
             # Heuristic: check output for outcome keywords
             output = run.outputs or {}
@@ -180,9 +182,9 @@ class LangSmithConnector:
             else:
                 out_str = str(output).lower()
             if "success" in out_str:
-                outcome = "success"
+                outcome = OUTCOME_SUCCESS
             elif any(kw in out_str for kw in ("failure", "error", "failed", "exception")):
-                outcome = "failure"
+                outcome = OUTCOME_FAILURE
 
         # Build spans from child runs
         spans = [self._run_to_span(trace_id, run, is_root=True)]
