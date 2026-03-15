@@ -313,43 +313,58 @@ class PerTaskMetric(ComparisonMetric):
     def __init__(self):
         self.task_id_field: str | None = None
 
-    def summarize(self, col: TraceCollection) -> dict[str, str]:
-        """Returns {task_id: outcome} for all traces with a known outcome."""
-        outcomes: dict[str, str] = {}
+    def summarize(self, col: TraceCollection) -> dict[str, dict]:
+        """Returns {task_id: {success: N, total: N}} for all traces."""
+        from collections import defaultdict
+
+        counts: dict[str, dict] = defaultdict(lambda: {"success": 0, "total": 0})
         for t in col.all_traces():
             if t.outcome in (OUTCOME_SUCCESS, OUTCOME_FAILURE):
                 task_id = _extract_task_id_from_trace(t, self.task_id_field)
-                outcomes.setdefault(task_id, t.outcome)
-        return outcomes
+                counts[task_id]["total"] += 1
+                if t.outcome == OUTCOME_SUCCESS:
+                    counts[task_id]["success"] += 1
+        return dict(counts)
 
     def compare(self, baseline: dict, current: dict) -> Observation:
         warnings: list[str] = []
-        matched = {t for t in baseline if t in current}
-        regressions = sorted(
-            t for t in matched
-            if baseline[t] == OUTCOME_SUCCESS and current[t] == OUTCOME_FAILURE
-        )
-        improvements = sorted(
-            t for t in matched
-            if baseline[t] == OUTCOME_FAILURE and current[t] == OUTCOME_SUCCESS
-        )
+        matched = sorted(set(baseline) & set(current))
+
+        regressions: list[tuple[str, dict, dict]] = []
+        improvements: list[tuple[str, dict, dict]] = []
+        unchanged: list[str] = []
+
+        for task in matched:
+            b, c = baseline[task], current[task]
+            b_rate = b["success"] / b["total"] if b["total"] else 0
+            c_rate = c["success"] / c["total"] if c["total"] else 0
+            if c_rate < b_rate:
+                regressions.append((task, b, c))
+            elif c_rate > b_rate:
+                improvements.append((task, b, c))
+            else:
+                unchanged.append(task)
+
+        n_reg = len(regressions)
+        n_imp = len(improvements)
         formatted = (
             f"{len(matched):,} tasks matched — "
-            f"✓ {len(improvements)} improved, ✗ {len(regressions)} regressed"
+            f"✓ {n_imp} improved, ✗ {n_reg} regressed"
         )
 
-        # Warn when matched tasks are a small fraction of what's available.
-        available = len(baseline) + len(current)
-        if available > 0 and len(matched) == 0:
+        # Warn when matched tasks are few.
+        if len(matched) == 0 and (baseline or current):
             warnings.append(
-                "No tasks matched between datasets — task IDs may differ or no outcome data present"
+                "No tasks matched between datasets — "
+                "task IDs may differ or no outcome data present"
             )
-        elif len(baseline) > 0 and len(current) > 0:
+        elif baseline and current:
             match_rate = len(matched) / min(len(baseline), len(current))
             if 0 < match_rate < 0.1:
                 warnings.append(
-                    f"Only {len(matched)} of {min(len(baseline), len(current))} tasks matched "
-                    f"({match_rate:.0%}) — per-task results may not be representative"
+                    f"Only {len(matched)} of "
+                    f"{min(len(baseline), len(current))} tasks matched "
+                    f"({match_rate:.0%}) — results may not be representative"
                 )
 
         if not matched:
@@ -363,17 +378,19 @@ class PerTaskMetric(ComparisonMetric):
         else:
             direction = Direction.SAME
 
-        # Build verbose detail lines — one per task with outcome change.
+        # Build verbose detail lines with counts.
         detail_lines: list[str] = []
-        for task in regressions:
+        for task, b, c in regressions:
             detail_lines.append(f"▼ {task}")
             detail_lines.append(
-                f"  {OUTCOME_SUCCESS} → {OUTCOME_FAILURE}"
+                f"  succeeded: {b['success']}/{b['total']}"
+                f" → {c['success']}/{c['total']}"
             )
-        for task in improvements:
+        for task, b, c in improvements:
             detail_lines.append(f"▲ {task}")
             detail_lines.append(
-                f"  {OUTCOME_FAILURE} → {OUTCOME_SUCCESS}"
+                f"  succeeded: {b['success']}/{b['total']}"
+                f" → {c['success']}/{c['total']}"
             )
 
         return Observation(
@@ -386,10 +403,10 @@ class PerTaskMetric(ComparisonMetric):
             detail_lines=detail_lines,
             metadata={
                 "matched": len(matched),
-                "regressions": regressions[:20],
-                "improvements": improvements[:20],
-                "n_regressions": len(regressions),
-                "n_improvements": len(improvements),
+                "regressions": [t for t, _, _ in regressions],
+                "improvements": [t for t, _, _ in improvements],
+                "n_regressions": n_reg,
+                "n_improvements": n_imp,
             },
             warnings=warnings,
         )
@@ -747,8 +764,8 @@ class PathDistributionMetric(ComparisonMetric):
         warnings: list[str] = []
         b, c = baseline["top_paths"], current["top_paths"]
         jaccard = len(b & c) / len(b | c) if (b | c) else 1.0
-        new_paths = list(c - b)[:10]
-        dropped_paths = list(b - c)[:10]
+        new_paths = list(c - b)
+        dropped_paths = list(b - c)
         formatted = f"Jaccard {jaccard:.2f}  (+{len(new_paths)} new, −{len(dropped_paths)} dropped)"
 
         small_n = min(baseline["n"], current["n"])
