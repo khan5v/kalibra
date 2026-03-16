@@ -9,19 +9,37 @@ import click
 from kalibra import display
 
 
-def run_inspect(path: str, config_path: str | None) -> None:
+def run_inspect(
+    path: str,
+    config_path: str | None,
+    *,
+    trace_id_field: str | None = None,
+    outcome: str | None = None,
+    cost_field: str | None = None,
+    task_id: str | None = None,
+) -> None:
     """Execute the inspect command."""
     from kalibra.config import CompareConfig, find_config
     from kalibra.engine import resolve_metrics
     from kalibra.loader import load_traces
     from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
 
-    # Load config — needed for trace_id field mapping.
+    # Load config — needed for field mappings.
     if not config_path:
         discovered = find_config()
         if discovered:
             config_path = str(discovered)
     config = CompareConfig.load(config_path)
+
+    # CLI flag overrides.
+    if trace_id_field:
+        config.fields.trace_id = trace_id_field
+    if outcome:
+        config.fields.outcome = outcome
+    if cost_field:
+        config.fields.cost = cost_field
+    if task_id:
+        config.fields.task_id = task_id
 
     try:
         traces = load_traces(path, fields=config.fields)
@@ -44,9 +62,9 @@ def run_inspect(path: str, config_path: str | None) -> None:
     has_outcome = sum(
         1 for t in traces if t.outcome in (OUTCOME_SUCCESS, OUTCOME_FAILURE)
     )
-    has_cost = sum(1 for t in traces if t.total_cost > 0)
-    has_tokens = sum(1 for t in traces if t.total_tokens > 0)
-    has_duration = sum(1 for t in traces if t.duration > 0)
+    has_cost = sum(1 for t in traces if t.total_cost is not None and t.total_cost > 0)
+    has_tokens = sum(1 for t in traces if t.total_tokens is not None and t.total_tokens > 0)
+    has_duration = sum(1 for t in traces if t.duration is not None and t.duration > 0)
 
     # Task ID: check if traces can be grouped into tasks.
     # A task_id is "extractable" if either metadata has a task_id field,
@@ -140,10 +158,27 @@ def run_inspect(path: str, config_path: str | None) -> None:
 
     click.echo()
 
-    # ── Trace metadata ────────────────────────────────────────────────────
-    click.echo(f"  {click.style('Trace metadata', bold=True)}")
+    # ── Trace fields ─────────────────────────────────────────────────────
+    click.echo(f"  {click.style('Trace fields', bold=True)}")
     click.echo()
 
+    # Standard fields — always show what's populated.
+    std_trace = [
+        ("outcome", has_outcome),
+        ("cost", has_cost),
+        ("tokens", has_tokens),
+        ("duration", has_duration),
+    ]
+    for label, count in std_trace:
+        if count > 0:
+            padding = max(1, 34 - len(label))
+            click.echo(
+                f"    {click.style(label, fg='white')}"
+                f"  {d * padding}  "
+                f"{click.style(f'{count}/{n} traces', dim=True)}"
+            )
+
+    # Extra metadata fields beyond the standard ones.
     if meta_keys:
         for key in sorted(meta_keys, key=lambda k: -meta_keys[k]):
             count = meta_keys[key]
@@ -155,26 +190,52 @@ def run_inspect(path: str, config_path: str | None) -> None:
                 f"  {d * padding}  "
                 f"{click.style(f'{count}/{n} traces, {unique_str}', dim=True)}"
             )
-    else:
-        click.echo(f"    {click.style('(no metadata)', dim=True)}")
 
     click.echo()
 
-    # ── Span attributes ───────────────────────────────────────────────────
-    click.echo(f"  {click.style('Span attributes', bold=True)}")
-    click.echo()
+    # ── Span fields ──────────────────────────────────────────────────────
+    if n_spans > 0:
+        click.echo(f"  {click.style('Span fields', bold=True)}")
+        click.echo()
 
-    if attr_keys:
-        for key in sorted(attr_keys, key=lambda k: -attr_keys[k]):
-            count = attr_keys[key]
-            padding = max(1, 34 - len(key))
-            click.echo(
-                f"    {click.style(key, fg='white')}"
-                f"  {d * padding}  "
-                f"{click.style(f'{count}/{n_spans} spans', dim=True)}"
-            )
-    else:
-        click.echo(f"    {click.style('(no attributes)', dim=True)}")
+        # Standard span fields — show what's populated.
+        has_span_cost = sum(1 for t in traces for s in t.spans if s.cost > 0)
+        has_span_tokens = sum(
+            1 for t in traces for s in t.spans if s.total_tokens > 0
+        )
+        has_span_model = sum(
+            1 for t in traces for s in t.spans if s.model
+        )
+        has_span_error = sum(1 for t in traces for s in t.spans if s.error)
+
+        std_span = [
+            ("name", sum(1 for t in traces for s in t.spans if s.name)),
+            ("cost", has_span_cost),
+            ("tokens", has_span_tokens),
+            ("model", has_span_model),
+            ("error", has_span_error),
+        ]
+        for label, count in std_span:
+            if count > 0:
+                padding = max(1, 34 - len(label))
+                click.echo(
+                    f"    {click.style(label, fg='white')}"
+                    f"  {d * padding}  "
+                    f"{click.style(f'{count}/{n_spans} spans', dim=True)}"
+                )
+
+        # Extra attributes beyond standard fields.
+        if attr_keys:
+            for key in sorted(attr_keys, key=lambda k: -attr_keys[k]):
+                count = attr_keys[key]
+                padding = max(1, 34 - len(key))
+                click.echo(
+                    f"    {click.style(key, fg='white')}"
+                    f"  {d * padding}  "
+                    f"{click.style(f'{count}/{n_spans} spans', dim=True)}"
+                )
+
+        click.echo()
 
     click.echo()
 
@@ -191,7 +252,8 @@ def run_inspect(path: str, config_path: str | None) -> None:
         click.echo(f"  {b}")
         click.echo(
             f"  {click.style('To fix missing fields, add to', dim=True)} "
-            f"{click.style('kalibra.yml', fg='cyan')}{click.style(':', dim=True)}"
+            f"{click.style('kalibra.yml', fg='cyan')}"
+            f"{click.style(' or use CLI flags:', dim=True)}"
         )
         click.echo(click.style("    fields:", dim=True))
         for s in suggestions:

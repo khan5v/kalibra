@@ -26,20 +26,17 @@ class TestMinimalTraces:
         assert len(traces) == 1
         assert traces[0].trace_id == "t1"
         assert traces[0].outcome == "success"
-        assert len(traces[0].spans) == 1  # synthetic span
+        assert traces[0].spans == []  # no synthetic span
 
-    def test_with_cost_and_model(self, tmp_path):
+    def test_with_cost_and_tokens(self, tmp_path):
         f = _write(tmp_path, [{
             "trace_id": "t1", "outcome": "success",
-            "cost": 0.012, "model": "gpt-4o",
-            "input_tokens": 500, "output_tokens": 200,
+            "cost": 0.012, "input_tokens": 500, "output_tokens": 200,
         }])
         traces = load_traces(f)
-        s = traces[0].spans[0]
-        assert s.cost == pytest.approx(0.012)
-        assert s.model == "gpt-4o"
-        assert s.input_tokens == 500
-        assert s.output_tokens == 200
+        assert traces[0].total_cost == pytest.approx(0.012)
+        assert traces[0].total_tokens == 700
+        assert traces[0].spans == []
 
     def test_with_duration(self, tmp_path):
         f = _write(tmp_path, [{
@@ -77,25 +74,14 @@ class TestMinimalTraces:
         assert len(traces) == 3
         assert [t.outcome for t in traces] == ["success", "failure", "success"]
 
-    def test_unknown_fields_become_attributes(self, tmp_path):
+    def test_unknown_fields_go_to_metadata(self, tmp_path):
         f = _write(tmp_path, [{
             "trace_id": "t1", "outcome": "success",
             "custom_score": 0.95, "evaluator": "gpt-4o",
         }])
         traces = load_traces(f)
-        attrs = traces[0].spans[0].attributes
-        assert attrs["custom_score"] == 0.95
-        assert attrs["evaluator"] == "gpt-4o"
-
-    def test_span_name_defaults_to_eval(self, tmp_path):
-        f = _write(tmp_path, [{"trace_id": "t1"}])
-        traces = load_traces(f)
-        assert traces[0].spans[0].name == "eval"
-
-    def test_custom_span_name(self, tmp_path):
-        f = _write(tmp_path, [{"trace_id": "t1", "name": "my-agent"}])
-        traces = load_traces(f)
-        assert traces[0].spans[0].name == "my-agent"
+        assert traces[0].metadata["custom_score"] == 0.95
+        assert traces[0].metadata["evaluator"] == "gpt-4o"
 
     def test_iso_timestamps(self, tmp_path):
         f = _write(tmp_path, [{
@@ -237,23 +223,21 @@ class TestErrors:
         with pytest.raises(ValueError, match="invalid JSON"):
             load_traces(str(p))
 
-    def test_missing_trace_id(self, tmp_path):
-        p = tmp_path / "bad.jsonl"
-        p.write_text('{"outcome": "success"}\n')
-        with pytest.raises(ValueError, match="no trace ID field found"):
-            load_traces(str(p))
+    def test_missing_trace_id_is_empty(self, tmp_path):
+        """When no trace_id field exists, trace_id is empty string."""
+        p = tmp_path / "no_id.jsonl"
+        p.write_text('{"outcome": "success"}\n{"outcome": "failure"}\n')
+        traces = load_traces(str(p))
+        assert len(traces) == 2
+        assert traces[0].trace_id == ""
+        assert traces[1].trace_id == ""
 
-    def test_missing_trace_id_shows_fields(self, tmp_path):
-        p = tmp_path / "bad.jsonl"
-        p.write_text('{"outcome": "success"}\n')
-        with pytest.raises(ValueError, match="Available fields.*outcome"):
-            load_traces(str(p))
-
-    def test_missing_trace_id_suggests_candidates(self, tmp_path):
-        p = tmp_path / "bad.jsonl"
+    def test_missing_trace_id_does_not_guess(self, tmp_path):
+        """Loader should NOT guess uuid as trace_id — only use configured field."""
+        p = tmp_path / "has_uuid.jsonl"
         p.write_text('{"uuid": "abc", "outcome": "success"}\n')
-        with pytest.raises(ValueError, match="might be the trace ID.*uuid"):
-            load_traces(str(p))
+        traces = load_traces(str(p))
+        assert traces[0].trace_id == ""  # empty, not "abc"
 
     def test_custom_trace_id_field(self, tmp_path):
         f = _write(tmp_path, [{"uuid": "t1", "outcome": "success"}])
@@ -289,24 +273,23 @@ class TestErrors:
 # ── attributes handling ─────────────────────────────────────────────────────
 
 class TestAttributes:
-    def test_attributes_dict_merged(self, tmp_path):
+    def test_attributes_dict_merged_into_metadata(self, tmp_path):
+        """For span-less traces, attributes go to metadata."""
         f = _write(tmp_path, [{
             "trace_id": "t1", "outcome": "success",
             "attributes": {"custom.field": "hello"},
         }])
         traces = load_traces(f)
-        attrs = traces[0].spans[0].attributes
-        assert "custom.field" in attrs
+        assert traces[0].metadata["custom.field"] == "hello"
 
-    def test_nested_dict_flattened(self, tmp_path):
+    def test_nested_dict_flattened_to_metadata(self, tmp_path):
         f = _write(tmp_path, [{
             "trace_id": "t1",
             "agent_cost": {"total_cost": 0.5, "total_tokens": 1000},
         }])
         traces = load_traces(f)
-        attrs = traces[0].spans[0].attributes
-        assert attrs["agent_cost.total_cost"] == 0.5
-        assert attrs["agent_cost.total_tokens"] == 1000
+        assert traces[0].metadata["agent_cost.total_cost"] == 0.5
+        assert traces[0].metadata["agent_cost.total_tokens"] == 1000
 
     def test_json_string_auto_parsed(self, tmp_path):
         f = _write(tmp_path, [{
@@ -314,6 +297,15 @@ class TestAttributes:
             "stats": '{"tokens": 500, "cost": 0.01}',
         }])
         traces = load_traces(f)
-        attrs = traces[0].spans[0].attributes
-        assert attrs["stats.tokens"] == 500
-        assert attrs["stats.cost"] == 0.01
+        assert traces[0].metadata["stats.tokens"] == 500
+        assert traces[0].metadata["stats.cost"] == 0.01
+
+    def test_span_attributes_preserved(self, tmp_path):
+        """For traces WITH spans, span attributes stay on spans."""
+        f = _write(tmp_path, [{
+            "trace_id": "t1",
+            "spans": [{"span_id": "s1", "name": "llm",
+                        "attributes": {"model.name": "gpt-4o"}}],
+        }])
+        traces = load_traces(f)
+        assert traces[0].spans[0].attributes["model.name"] == "gpt-4o"

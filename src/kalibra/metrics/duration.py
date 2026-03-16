@@ -53,9 +53,11 @@ class DurationMetric(ComparisonMetric):
         baseline: list[Trace],
         current: list[Trace],
     ) -> Observation:
-        # Filter to traces with timing data — 0 duration means no timestamps.
-        b_durs = [t.duration for t in baseline if t.duration > 0]
-        c_durs = [t.duration for t in current if t.duration > 0]
+        # Filter to traces with timing data. None = not measured.
+        b_durs = [t.duration for t in baseline
+                  if t.duration is not None and t.duration > 0]
+        c_durs = [t.duration for t in current
+                  if t.duration is not None and t.duration > 0]
 
         if not b_durs or not c_durs:
             return self._no_data(

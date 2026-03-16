@@ -47,8 +47,8 @@ class TokenEfficiencyMetric(ComparisonMetric):
                 f"No successful traces in {side} — token efficiency is unavailable",
             )
 
-        b_tokens = sum(t.total_tokens for t in baseline)
-        c_tokens = sum(t.total_tokens for t in current)
+        b_tokens = sum(t.total_tokens for t in baseline if t.total_tokens is not None)
+        c_tokens = sum(t.total_tokens for t in current if t.total_tokens is not None)
 
         if b_tokens == 0 and c_tokens == 0:
             return self._no_data(

@@ -33,7 +33,8 @@ class Span:
     start_ns: int = 0
     end_ns: int = 0
 
-    # Telemetry.
+    # Telemetry — 0.0/0 means the value is zero, not absent.
+    # Absence is expressed by the trace having no spans at all.
     cost: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -62,6 +63,14 @@ class Trace:
     """A single agent run — a tree of spans plus outcome and metadata.
 
     The fundamental unit of comparison. Kalibra compares populations of traces.
+
+    Telemetry can come from two sources:
+    - Spans: when trace.spans is non-empty, properties aggregate from spans.
+    - Trace-level fields: when trace.spans is empty, the loader sets
+      _cost, _input_tokens, etc. directly from the JSONL row.
+
+    None means "not measured." 0 means "measured as zero." Metrics must
+    respect this distinction — None values should be excluded, not treated as 0.
     """
 
     trace_id: str = ""
@@ -69,29 +78,42 @@ class Trace:
     outcome: str | None = None  # OUTCOME_SUCCESS | OUTCOME_FAILURE | None
     metadata: dict = field(default_factory=dict)
 
-    @property
-    def duration(self) -> float:
-        """Wall-clock duration: max(end) - min(start) across all spans, in seconds."""
-        if not self.spans:
-            return 0.0
-        times = [
-            (s.start_ns, s.end_ns)
-            for s in self.spans
-            if s.start_ns or s.end_ns
-        ]
-        if not times:
-            return 0.0
-        return (max(e for _, e in times) - min(s for s, _ in times)) / 1e9
+    # Trace-level telemetry for span-less traces. None = not measured.
+    _cost: float | None = None
+    _input_tokens: int | None = None
+    _output_tokens: int | None = None
+    _duration_s: float | None = None
 
     @property
-    def total_cost(self) -> float:
-        """Sum of all span costs."""
-        return sum(s.cost for s in self.spans)
+    def duration(self) -> float | None:
+        """Wall-clock duration in seconds. None if not measured."""
+        if self.spans:
+            times = [
+                (s.start_ns, s.end_ns)
+                for s in self.spans
+                if s.start_ns or s.end_ns
+            ]
+            if times:
+                return (max(e for _, e in times) - min(s for s, _ in times)) / 1e9
+            return None
+        return self._duration_s
 
     @property
-    def total_tokens(self) -> int:
-        """Sum of all span tokens (input + output)."""
-        return sum(s.total_tokens for s in self.spans)
+    def total_cost(self) -> float | None:
+        """Sum of all span costs. None if no spans and no trace-level cost."""
+        if self.spans:
+            total = sum(s.cost for s in self.spans)
+            return total if total > 0 or any(s.cost > 0 for s in self.spans) else 0.0
+        return self._cost
+
+    @property
+    def total_tokens(self) -> int | None:
+        """Sum of all span tokens. None if no spans and no trace-level tokens."""
+        if self.spans:
+            return sum(s.total_tokens for s in self.spans)
+        if self._input_tokens is not None or self._output_tokens is not None:
+            return (self._input_tokens or 0) + (self._output_tokens or 0)
+        return None
 
     def root_spans(self) -> list[Span]:
         """Spans with no parent."""

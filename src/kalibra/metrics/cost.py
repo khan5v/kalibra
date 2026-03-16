@@ -49,10 +49,11 @@ class CostMetric(ComparisonMetric):
         baseline: list[Trace],
         current: list[Trace],
     ) -> Observation:
-        # Filter to traces with cost data — traces with $0 total cost
-        # either have no LLM calls or no cost data populated.
-        b_costs = [t.total_cost for t in baseline if t.total_cost > 0]
-        c_costs = [t.total_cost for t in current if t.total_cost > 0]
+        # Filter to traces with cost data. None = not measured, 0 = free.
+        b_costs = [t.total_cost for t in baseline
+                   if t.total_cost is not None and t.total_cost > 0]
+        c_costs = [t.total_cost for t in current
+                   if t.total_cost is not None and t.total_cost > 0]
 
         if not b_costs and not c_costs:
             return self._no_data(

@@ -1,0 +1,41 @@
+baseline:
+  path: ./a.jsonl
+
+current:
+  path: ./b.jsonl
+
+# ── Metrics ──────────────────────────────────────────────
+# All 11 built-in metrics run by default.
+# Remove any you don't need.
+
+metrics:
+  - success_rate        # task pass/fail rate + significance test
+  - cost                # cost per trace — median, avg, total
+  - steps               # steps per task — median and avg
+  - duration            # latency — median, avg, P95
+  - error_rate          # fraction of spans that error
+  - path_distribution   # execution path similarity
+  - token_usage         # token consumption — in/out/total
+  - token_efficiency    # tokens per successful task
+  - cost_quality        # cost per success
+  - trace_breakdown     # per-task regressions
+  - span_breakdown      # per-span regressions
+
+# ── Quality gates ────────────────────────────────────────
+# Comparison fails (exit 1) if any threshold is violated.
+# Run: kalibra compare --metrics  to see all available fields.
+
+require:
+  - success_rate_delta >= -5    # max 5 pp success rate drop
+  - regressions <= 10           # max 10 tasks flipped
+  - cost_delta_pct <= 30        # max 30% cost increase
+  - span_regressions <= 3       # max 3 span names regressed
+
+# ── Field mappings ───────────────────────────────────────
+# Set these if 'kalibra inspect' shows missing data.
+#
+# fields:
+#   trace_id: uuid              # which field identifies each trace
+#   task_id: metadata.task_id   # per-task regression matching
+#   outcome: metadata.result    # success/failure detection
+#   cost: custom.cost_usd       # cost metric source

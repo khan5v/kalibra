@@ -48,10 +48,11 @@ class TokenUsageMetric(ComparisonMetric):
         baseline: list[Trace],
         current: list[Trace],
     ) -> Observation:
-        # Filter to traces with token data — traces with 0 total tokens
-        # either have no LLM calls or no token data populated.
-        b_total = [float(t.total_tokens) for t in baseline if t.total_tokens > 0]
-        c_total = [float(t.total_tokens) for t in current if t.total_tokens > 0]
+        # Filter to traces with token data. None = not measured.
+        b_total = [float(t.total_tokens) for t in baseline
+                   if t.total_tokens is not None and t.total_tokens > 0]
+        c_total = [float(t.total_tokens) for t in current
+                   if t.total_tokens is not None and t.total_tokens > 0]
 
         if not b_total and not c_total:
             return self._no_data(

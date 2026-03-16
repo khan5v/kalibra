@@ -96,14 +96,27 @@ def compare(baseline, current, out_format, require, config_path,
 @main.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--config", "config_path", default=None, type=click.Path(),
-              help="Compare config — inspect only checks fields needed by active metrics.")
-def inspect(path, config_path):
+              help="Config file for field mappings and metric selection.")
+@click.option("--trace-id", "trace_id_field", default=None,
+              help="Field name to use as trace ID (e.g. uuid, task_name).")
+@click.option("--outcome", default=None,
+              help="Field path for outcome detection (e.g. metadata.result).")
+@click.option("--cost", "cost_field", default=None,
+              help="Field path for cost (e.g. agent_cost.total_cost).")
+@click.option("--task-id", default=None,
+              help="Field path for per-task matching (e.g. metadata.task_name).")
+def inspect(path, config_path, trace_id_field, outcome, cost_field, task_id):
     """Inspect a trace file — show data coverage, available fields, and config suggestions.
 
     \b
     Examples:
       kalibra inspect traces.jsonl
+      kalibra inspect traces.jsonl --trace-id uuid
       kalibra inspect traces.jsonl --config kalibra.yml
     """
     from kalibra.commands.inspect import run_inspect
-    run_inspect(path, config_path)
+    run_inspect(
+        path, config_path,
+        trace_id_field=trace_id_field, outcome=outcome,
+        cost_field=cost_field, task_id=task_id,
+    )

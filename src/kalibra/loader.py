@@ -261,26 +261,64 @@ def _row_to_trace(row: dict, trace_id: str) -> Trace:
     """Convert a parsed JSONL row to a Trace object."""
     outcome = row.get("outcome")
 
-    # Parse spans if present.
-    raw_spans = row.get("spans")
-    if isinstance(raw_spans, list) and raw_spans:
-        spans = [_dict_to_span(s) for s in raw_spans if isinstance(s, dict)]
-    else:
-        # No spans array — create a synthetic span from trace-level fields.
-        spans = [_trace_level_to_span(row, trace_id)]
-
-    spans.sort(key=lambda s: s.start_ns)
-
     metadata = row.get("metadata") or {}
     if not isinstance(metadata, dict):
         metadata = {}
 
+    # Parse spans if present.
+    raw_spans = row.get("spans")
+    if isinstance(raw_spans, list) and raw_spans:
+        spans = [_dict_to_span(s) for s in raw_spans if isinstance(s, dict)]
+        spans.sort(key=lambda s: s.start_ns)
+        return Trace(
+            trace_id=trace_id,
+            spans=spans,
+            outcome=outcome,
+            metadata=metadata,
+        )
+
+    # No spans — set trace-level fields directly. Spans stays empty.
+    start_ns, end_ns = _parse_timing(row)
+    duration_s = (end_ns - start_ns) / 1e9 if (start_ns or end_ns) else 0.0
+
+    # Collect extra fields as metadata (for inspect visibility).
+    for k, v in row.items():
+        if k not in _TRACE_KNOWN_FIELDS and v is not None:
+            if isinstance(v, dict):
+                _flatten_dict(v, prefix=k, out=metadata)
+            elif not isinstance(v, list):
+                metadata[k] = v
+    extra = row.get("attributes")
+    if isinstance(extra, dict):
+        metadata.update(extra)
+
+    # Only set trace-level fields that actually exist in the row.
+    # Missing = None (not measured), present = the value (even if 0).
+    raw_cost = row.get("cost")
+    raw_in = row.get("input_tokens")
+    raw_out = row.get("output_tokens")
+    duration = (end_ns - start_ns) / 1e9 if (start_ns or end_ns) else None
+    if duration is None and "duration_s" in row:
+        duration = float(row["duration_s"])
+
     return Trace(
         trace_id=trace_id,
-        spans=spans,
+        spans=[],
         outcome=outcome,
         metadata=metadata,
+        _cost=float(raw_cost) if raw_cost is not None else None,
+        _input_tokens=int(raw_in) if raw_in is not None else None,
+        _output_tokens=int(raw_out) if raw_out is not None else None,
+        _duration_s=duration,
     )
+
+
+_TRACE_KNOWN_FIELDS = {
+    "trace_id", "outcome", "metadata", "spans",
+    "cost", "input_tokens", "output_tokens", "model",
+    "start_time", "end_time", "duration_s", "start_ns", "end_ns",
+    "error", "name", "span_id", "parent_id", "attributes",
+}
 
 
 def _dict_to_span(d: dict) -> Span:
@@ -301,43 +339,6 @@ def _dict_to_span(d: dict) -> Span:
     )
 
 
-def _trace_level_to_span(row: dict, trace_id: str) -> Span:
-    """Create a synthetic span from trace-level fields (no spans array)."""
-    start_ns, end_ns = _parse_timing(row)
-
-    # Collect any extra fields as attributes.
-    known = {
-        "trace_id", "outcome", "metadata", "spans",
-        "cost", "input_tokens", "output_tokens", "model",
-        "start_time", "end_time", "duration_s", "start_ns", "end_ns",
-        "error", "name", "span_id", "parent_id", "attributes",
-    }
-    attrs = {}
-    for k, v in row.items():
-        if k not in known and v is not None:
-            if isinstance(v, dict):
-                _flatten_dict(v, prefix=k, out=attrs)
-            elif not isinstance(v, list):
-                attrs[k] = v
-
-    # Also include explicit attributes dict.
-    extra = row.get("attributes")
-    if isinstance(extra, dict):
-        attrs.update(extra)
-
-    return Span(
-        span_id=row.get("span_id", f"{hash(trace_id) & 0xFFFFFFFF:08x}"),
-        name=row.get("name", "eval"),
-        parent_id=row.get("parent_id"),
-        start_ns=start_ns,
-        end_ns=end_ns,
-        cost=float(row.get("cost", 0.0)),
-        input_tokens=int(row.get("input_tokens", 0)),
-        output_tokens=int(row.get("output_tokens", 0)),
-        model=row.get("model"),
-        error=bool(row.get("error", False)),
-        attributes=attrs,
-    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -351,35 +352,18 @@ _LIKELY_ID_FIELDS = [
 def _resolve_trace_id(
     row: dict, id_field: str, path: Path, line_no: int,
 ) -> str:
-    """Resolve the trace ID from a row, with helpful error on failure."""
-    # Configured field or default trace_id.
+    """Resolve the trace ID from a row.
+
+    Uses the configured field if present, otherwise falls back to a
+    synthetic ID from the line number. Never guesses — if the user
+    didn't configure a field, they get line-number IDs and inspect
+    will tell them which field to set.
+    """
     if id_field != "trace_id" and id_field in row:
         return str(row[id_field])
     if "trace_id" in row:
         return str(row["trace_id"])
-
-    # Not found — build helpful error.
-    row_keys = [k for k in row.keys()]
-    candidates = [k for k in row_keys if k in _LIKELY_ID_FIELDS]
-    for k in row_keys:
-        if (k.endswith("_id") or k.endswith("_name")) and k not in candidates:
-            candidates.append(k)
-
-    msg = "no trace ID field found"
-    if id_field != "trace_id":
-        msg += f" (looked for '{id_field}' from config)"
-
-    hints = [f"Available fields: {row_keys}"]
-    if candidates:
-        hints.append(f"These might be the trace ID: {candidates}")
-    hints.append(
-        "Set in kalibra.yml:\n"
-        "  fields:\n"
-        f"    trace_id: {candidates[0] if candidates else '<field_name>'}"
-    )
-
-    _error(path, line_no, msg, hint="\n".join(hints))
-    return ""  # unreachable — _error raises
+    return ""
 
 
 def _parse_timing(row: dict) -> tuple[int, int]:
@@ -534,26 +518,38 @@ def _apply_fields(traces: list[Trace], fields: object) -> None:
             if val is not None:
                 trace.metadata["task_id"] = val
 
-        # ── Span-level field mappings ────────────────────────────────
+        # ── Cost/token field mappings ─────────────────────────────────
         if cost_field or input_tokens_field or output_tokens_field:
-            for span in trace.spans:
-                # Build a combined lookup: span dict fields + attributes.
-                lookup = span.attributes
-
-                if cost_field and span.cost == 0:
-                    val = _resolve_dot_path(lookup, cost_field)
+            if trace.spans:
+                # Has spans — apply to each span.
+                for span in trace.spans:
+                    lookup = span.attributes
+                    if cost_field and span.cost == 0:
+                        val = _resolve_dot_path(lookup, cost_field)
+                        if val is not None:
+                            span.cost = float(val)
+                    if input_tokens_field and span.input_tokens == 0:
+                        val = _resolve_dot_path(lookup, input_tokens_field)
+                        if val is not None:
+                            span.input_tokens = int(val)
+                    if output_tokens_field and span.output_tokens == 0:
+                        val = _resolve_dot_path(lookup, output_tokens_field)
+                        if val is not None:
+                            span.output_tokens = int(val)
+            else:
+                # No spans — apply to trace-level fields via metadata.
+                if cost_field and trace._cost is None:
+                    val = _resolve_dot_path(trace.metadata, cost_field)
                     if val is not None:
-                        span.cost = float(val)
-
-                if input_tokens_field and span.input_tokens == 0:
-                    val = _resolve_dot_path(lookup, input_tokens_field)
+                        trace._cost = float(val)
+                if input_tokens_field and trace._input_tokens is None:
+                    val = _resolve_dot_path(trace.metadata, input_tokens_field)
                     if val is not None:
-                        span.input_tokens = int(val)
-
-                if output_tokens_field and span.output_tokens == 0:
-                    val = _resolve_dot_path(lookup, output_tokens_field)
+                        trace._input_tokens = int(val)
+                if output_tokens_field and trace._output_tokens is None:
+                    val = _resolve_dot_path(trace.metadata, output_tokens_field)
                     if val is not None:
-                        span.output_tokens = int(val)
+                        trace._output_tokens = int(val)
 
 
 def _classify_outcome(val) -> str | None:

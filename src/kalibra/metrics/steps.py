@@ -47,8 +47,9 @@ class StepsMetric(ComparisonMetric):
         baseline: list[Trace],
         current: list[Trace],
     ) -> Observation:
-        b_steps = [float(len(t.spans)) for t in baseline]
-        c_steps = [float(len(t.spans)) for t in current]
+        # Only count traces that have span data. Empty spans = no step info.
+        b_steps = [float(len(t.spans)) for t in baseline if t.spans]
+        c_steps = [float(len(t.spans)) for t in current if t.spans]
 
         if not b_steps or not c_steps:
             return self._no_data(

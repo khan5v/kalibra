@@ -49,8 +49,8 @@ class CostQualityMetric(ComparisonMetric):
                 f"No successful traces in {side} — cost-quality is unavailable",
             )
 
-        b_cost = sum(t.total_cost for t in baseline)
-        c_cost = sum(t.total_cost for t in current)
+        b_cost = sum(t.total_cost for t in baseline if t.total_cost is not None)
+        c_cost = sum(t.total_cost for t in current if t.total_cost is not None)
 
         if b_cost == 0 and c_cost == 0:
             return self._no_data(
