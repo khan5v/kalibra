@@ -105,13 +105,15 @@ def compare(baseline, current, out_format, require, config_path,
               help="Field path for cost (e.g. agent_cost.total_cost).")
 @click.option("--task-id", default=None,
               help="Field path for per-task matching (e.g. metadata.task_name).")
-def inspect(path, config_path, trace_id_field, outcome, cost_field, task_id):
+@click.option("--suggest", is_flag=True, default=False,
+              help="Suggest field mappings based on field names in the data.")
+def inspect(path, config_path, trace_id_field, outcome, cost_field, task_id, suggest):
     """Inspect a trace file — show data coverage, available fields, and config suggestions.
 
     \b
     Examples:
       kalibra inspect traces.jsonl
-      kalibra inspect traces.jsonl --trace-id uuid
+      kalibra inspect traces.jsonl --suggest
       kalibra inspect traces.jsonl --config kalibra.yml
     """
     from kalibra.commands.inspect import run_inspect
@@ -119,4 +121,5 @@ def inspect(path, config_path, trace_id_field, outcome, cost_field, task_id):
         path, config_path,
         trace_id_field=trace_id_field, outcome=outcome,
         cost_field=cost_field, task_id=task_id,
+        suggest=suggest,
     )

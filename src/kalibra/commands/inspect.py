@@ -17,6 +17,7 @@ def run_inspect(
     outcome: str | None = None,
     cost_field: str | None = None,
     task_id: str | None = None,
+    suggest: bool = False,
 ) -> None:
     """Execute the inspect command."""
     from kalibra.config import CompareConfig, find_config
@@ -25,7 +26,10 @@ def run_inspect(
     from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
 
     # Load config — needed for field mappings.
-    if not config_path:
+    if config_path:
+        if not Path(config_path).exists():
+            raise click.UsageError(f"Config file not found: {config_path}")
+    else:
         discovered = find_config()
         if discovered:
             config_path = str(discovered)
@@ -262,4 +266,130 @@ def run_inspect(
     else:
         click.echo(f"  {b}")
         click.echo(f"  {click.style('All active metrics have data.', fg='green')}")
+        click.echo()
+
+    # ── Suggest field mappings ────────────────────────────────────────────
+    if suggest:
+        all_fields: set[str] = set()
+        for t in traces:
+            all_fields.update(t.metadata.keys())
+            for s in t.spans:
+                all_fields.update(s.attributes.keys())
+        _print_suggestions(all_fields, b)
+
+
+# ── Suggest logic ────────────────────────────────────────────────────────────
+
+# Known aliases per dimension — from real-world Langfuse, LangSmith,
+# Braintrust, HuggingFace, and OpenAI trace exports.
+_ALIASES: dict[str, list[str]] = {
+    "trace_id": [
+        "trace_id", "id", "uuid", "run_id", "request_id", "instance_id",
+        "task_name", "traj_id", "session_id", "experiment_id", "eval_id",
+    ],
+    "outcome": [
+        "outcome", "result", "status", "evaluation", "success", "passed",
+        "resolved", "correctness", "label", "verdict", "score", "is_correct",
+    ],
+    "cost": [
+        "cost", "total_cost", "price", "total_price", "llm_cost", "api_cost",
+        "run_cost", "agent_cost", "usage_cost", "token_cost",
+    ],
+    "input_tokens": [
+        "input_tokens", "prompt_tokens", "total_input_tokens",
+        "tokens_in", "input_token_count", "prompt_token_count",
+    ],
+    "output_tokens": [
+        "output_tokens", "completion_tokens", "total_output_tokens",
+        "tokens_out", "output_token_count", "completion_token_count",
+    ],
+    "duration": [
+        "duration", "duration_s", "elapsed", "elapsed_time", "latency",
+        "run_time", "execution_time", "wall_time", "time_seconds",
+    ],
+}
+
+_MAX_CANDIDATES = 3
+
+
+def _score_field(field: str, aliases: list[str]) -> int:
+    """Score a field name against an alias list. Higher = better match.
+
+    3 = last segment exactly matches an alias
+    2 = full field path exactly matches an alias
+    1 = fuzzy match on last segment via difflib
+    0 = no match
+
+    Substring matching is intentionally excluded — "agent_cost.total_input_tokens"
+    should not match the "cost" alias list just because "cost" appears in the path.
+    """
+    last_segment = field.rsplit(".", 1)[-1].lower()
+    field_lower = field.lower()
+
+    for alias in aliases:
+        alias_lower = alias.lower()
+        if last_segment == alias_lower:
+            return 3
+        if field_lower == alias_lower:
+            return 2
+
+    from difflib import get_close_matches
+    if get_close_matches(last_segment, [a.lower() for a in aliases], n=1, cutoff=0.6):
+        return 1
+
+    return 0
+
+
+def _print_suggestions(all_fields: set[str], bar: str) -> None:
+    """Print field mapping suggestions based on name matching."""
+    click.echo(f"  {bar}")
+    click.echo(f"  {click.style('Suggested field mappings', bold=True)}")
+    click.echo()
+
+    best_picks: dict[str, str] = {}
+    all_candidates: dict[str, list[tuple[int, str]]] = {}
+
+    for dimension, aliases in _ALIASES.items():
+        scored: list[tuple[int, str]] = []
+        for field in sorted(all_fields):
+            s = _score_field(field, aliases)
+            if s > 0:
+                scored.append((s, field))
+        scored.sort(key=lambda x: (-x[0], len(x[1])))
+        all_candidates[dimension] = scored[:_MAX_CANDIDATES]
+
+    has_any = any(c for c in all_candidates.values())
+    if not has_any:
+        click.echo(f"  {click.style('No field mapping suggestions — standard field names detected.', dim=True)}")
+        click.echo()
+        return
+
+    for dimension, candidates in all_candidates.items():
+        label = click.style(dimension, bold=True)
+        click.echo(f"    {label}")
+
+        if candidates:
+            for i, (score, field) in enumerate(candidates):
+                if i == 0 and score >= 2:
+                    star = click.style("★", fg="green")
+                    name = click.style(field, fg="cyan")
+                    click.echo(f"      {star} {name}")
+                    best_picks[dimension] = field
+                else:
+                    click.echo(f"        {click.style(field, dim=True)}")
+        else:
+            click.echo(f"        {click.style('(no candidates found)', dim=True)}")
+
+        click.echo()
+
+    if best_picks:
+        click.echo(f"  {click.style('To apply, add to', dim=True)} "
+                    f"{click.style('kalibra.yml', fg='cyan')}"
+                    f"{click.style(':', dim=True)}")
+        click.echo()
+        click.echo(click.style("    fields:", dim=True))
+        for dim in _ALIASES:
+            pick = best_picks.get(dim)
+            val = pick if pick else "<chosen field>"
+            click.echo(click.style(f"      {dim}: {val}", dim=True))
         click.echo()

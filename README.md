@@ -259,11 +259,19 @@ current: braintrust-prod
 
 ### Inspect your data
 
-See what's in a trace file, which metrics will work, and what config to add:
+See what's in a trace file and which metrics will work:
 
 ```bash
 kalibra inspect traces.jsonl
 ```
+
+If your data uses non-standard field names, ask Kalibra to suggest mappings:
+
+```bash
+kalibra inspect traces.jsonl --suggest
+```
+
+This scans your field names and shows ranked candidates for each dimension (trace_id, outcome, cost, tokens, duration) with a copy-pasteable `fields:` config block.
 
 ---
 
@@ -384,10 +392,12 @@ kalibra init                          # create kalibra.yml interactively
 kalibra compare                       # compare using kalibra.yml
 kalibra compare --baseline a --current b   # compare two files directly
 kalibra compare -v                    # verbose — per-span/per-task detail
+kalibra compare -q                    # quiet — no status messages, CI-friendly
 kalibra compare --format markdown     # output as GitHub PR comment
 kalibra compare --format json         # machine-readable JSON
 kalibra compare --metrics             # list all metrics and threshold fields
-kalibra inspect traces.jsonl          # show data coverage and field suggestions
+kalibra inspect traces.jsonl          # show data coverage and fields
+kalibra inspect traces.jsonl --suggest  # suggest field mappings
 ```
 
 ---
