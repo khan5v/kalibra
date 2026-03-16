@@ -504,6 +504,10 @@ def _format_span_breakdown_details(obs: Observation) -> list[str]:
 
         details.append(f"  n={b.get('count', 0)} → {c.get('count', 0)} spans")
 
+        warning = entry.get("warning")
+        if warning:
+            details.append(f"  ! {warning}")
+
     return details
 
 

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import math
 import random
-import warnings
 
 
 def mean(values: list[float]) -> float:
@@ -107,12 +106,9 @@ def mannwhitney(
     No normality assumption. Works with ordinal data.
 
     Returns {"U": float, "pvalue": float, "significant": bool} or None
-    if scipy is not installed or samples are too small.
+    if samples are too small.
     """
-    try:
-        from scipy.stats import mannwhitneyu
-    except ImportError:
-        return None
+    from scipy.stats import mannwhitneyu
 
     if len(baseline) < 2 or len(current) < 2:
         return None
@@ -158,14 +154,3 @@ def two_proportion_ztest(
     return round(z, 4), round(math.erfc(abs(z) / math.sqrt(2)), 6)
 
 
-def maybe_scipy_hint() -> None:
-    """Show a one-time hint about installing scipy."""
-    try:
-        import scipy  # noqa: F401
-    except ImportError:
-        warnings.warn(
-            "scipy not installed — continuous metrics use threshold-based "
-            "comparison only. For Mann-Whitney U significance tests: "
-            "pip install kalibra[stats]",
-            stacklevel=3,
-        )

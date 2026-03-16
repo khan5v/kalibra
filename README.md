@@ -300,7 +300,7 @@ This scans your field names and shows ranked candidates for each dimension (trac
 | **trace_breakdown** | Per-task regressions and improvements | `regressions`, `improvements` |
 | **span_breakdown** | Per-span regressions — duration, cost, tokens, errors | `span_regressions`, `span_improvements` |
 
-**Statistical methods**: Success rate uses a two-proportion z-test. Continuous metrics use bootstrap 95% CIs on the delta between populations. Install `scipy` for Mann-Whitney U significance tests: `pip install kalibra[stats]`.
+**Statistical methods**: Success rate uses a two-proportion z-test. Continuous metrics use bootstrap 95% CIs on the delta between populations and Mann-Whitney U for significance testing.
 
 **Compact vs verbose**: Default output shows one line per metric. Add `-v` for full detail — per-span breakdowns, per-task outcome changes, confidence intervals, p-values.
 

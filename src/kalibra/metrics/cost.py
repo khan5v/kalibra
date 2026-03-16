@@ -25,7 +25,6 @@ from kalibra.metrics import ComparisonMetric, Observation
 from kalibra.metrics._stats import (
     bootstrap_ci,
     mannwhitney,
-    maybe_scipy_hint,
     mean,
     median,
     pct_delta,
@@ -70,7 +69,6 @@ class CostMetric(ComparisonMetric):
                 f"{len(c_costs)}/{len(current)} current traces"
             )
 
-        maybe_scipy_hint()
 
         b_med = median(b_costs)
         c_med = median(c_costs)

@@ -24,7 +24,6 @@ from kalibra.metrics import ComparisonMetric, Observation
 from kalibra.metrics._stats import (
     bootstrap_ci,
     mannwhitney,
-    maybe_scipy_hint,
     mean,
     median,
     pct_delta,
@@ -69,7 +68,6 @@ class TokenUsageMetric(ComparisonMetric):
                 f"{len(c_total)}/{len(current)} current traces"
             )
 
-        maybe_scipy_hint()
 
         b_med = median(b_total)
         c_med = median(c_total)

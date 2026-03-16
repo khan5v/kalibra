@@ -59,7 +59,6 @@ class SpanBreakdownMetric(ComparisonMetric):
         improvements: list[dict] = []
         mixed: list[dict] = []
         unchanged: list[str] = []
-        warnings: list[str] = []
         per_span: dict[str, dict] = {}
 
         for name in matched_names:
@@ -69,11 +68,6 @@ class SpanBreakdownMetric(ComparisonMetric):
             c_count = len(c_spans)
 
             small = min(b_count, c_count)
-            if small < _MIN_SPAN_COUNT:
-                warnings.append(
-                    f"Span '{name}' has only {small} occurrences "
-                    f"— recommend ≥{_MIN_SPAN_COUNT}"
-                )
 
             b_stats = _span_stats(b_spans)
             c_stats = _span_stats(c_spans)
@@ -101,6 +95,12 @@ class SpanBreakdownMetric(ComparisonMetric):
                 or tk < -threshold or err_delta_pp < -1.0
             )
 
+            span_warning = None
+            if small < _MIN_SPAN_COUNT:
+                span_warning = (
+                    f"only {small} occurrences — recommend ≥{_MIN_SPAN_COUNT}"
+                )
+
             span_entry = {
                 "span_name": name,
                 "baseline": {**b_stats, "count": b_count},
@@ -111,6 +111,7 @@ class SpanBreakdownMetric(ComparisonMetric):
                     "tokens_pct": tok_delta or 0,
                     "error_rate_pp": round(err_delta_pp, 1),
                 },
+                "warning": span_warning,
             }
 
             # Classify: mixed if both regressed and improved dimensions exist.
@@ -164,7 +165,6 @@ class SpanBreakdownMetric(ComparisonMetric):
                 "n_mixed": n_mix,
                 "per_span": per_span,
             },
-            warnings=warnings,
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:

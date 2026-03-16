@@ -23,7 +23,6 @@ from kalibra.metrics import ComparisonMetric, Observation
 from kalibra.metrics._stats import (
     bootstrap_ci,
     mannwhitney,
-    maybe_scipy_hint,
     mean,
     median,
     pct_delta,
@@ -57,7 +56,6 @@ class StepsMetric(ComparisonMetric):
                 "No traces available — step comparison is unavailable",
             )
 
-        maybe_scipy_hint()
 
         b_med = median(b_steps)
         c_med = median(c_steps)
