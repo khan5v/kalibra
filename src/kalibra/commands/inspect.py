@@ -290,6 +290,7 @@ _ALIASES: dict[str, list[str]] = {
     "outcome": [
         "outcome", "result", "status", "evaluation", "success", "passed",
         "resolved", "correctness", "label", "verdict", "score", "is_correct",
+        "judge", "is_resolved", "is_success",
     ],
     "cost": [
         "cost", "total_cost", "price", "total_price", "llm_cost", "api_cost",
