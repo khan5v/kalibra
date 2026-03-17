@@ -19,4 +19,5 @@ config/showcase/
 .DS_Store
 *.jsonl
 !examples/*.jsonl
+!src/kalibra/demo_data/*.jsonl
 .*/

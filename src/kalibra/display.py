@@ -130,6 +130,38 @@ def metrics_list() -> None:
     click.echo()
 
 
+def no_data() -> None:
+    """Render a styled 'no data specified' message — the first thing new users see."""
+    click.echo()
+    click.echo(f"  {click.style('Kalibra', bold=True)}")
+    click.echo(f"  {bar()}")
+    click.echo()
+    click.echo(
+        f"  {click.style('Try it out', fg='cyan', bold=True)}"
+        f"        {click.style('kalibra demo', fg='cyan')}"
+    )
+    click.echo(
+        f"  {click.style('Your data', fg='white', bold=True)}"
+        f"          {click.style('kalibra compare', fg='white')}"
+        f" {click.style('baseline.jsonl current.jsonl', dim=True)}"
+    )
+    click.echo(
+        f"  {click.style('Explore a file', fg='white', bold=True)}"
+        f"     {click.style('kalibra inspect', fg='white')}"
+        f" {click.style('traces.jsonl --suggest', dim=True)}"
+    )
+    click.echo(
+        f"  {click.style('Set up config', fg='white', bold=True)}"
+        f"      {click.style('kalibra init', fg='white')}"
+    )
+    click.echo()
+    click.echo(f"  {bar()}")
+    click.echo(
+        f"  {click.style('Docs:', dim=True)} "
+        f"{click.style('https://github.com/khan5v/kalibra', dim=True)}"
+    )
+    click.echo()
+
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 

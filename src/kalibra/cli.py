@@ -13,6 +13,15 @@ def main():
     """Kalibra — agent evaluation and regression detection."""
 
 
+# ── demo ──────────────────────────────────────────────────────────────────────
+
+@main.command()
+def demo():
+    """Run a comparison on built-in sample data to see Kalibra in action."""
+    from kalibra.commands.demo import run_demo
+    run_demo()
+
+
 # ── init ───────────────────────────────────────────────────────────────────────
 
 @main.command()
@@ -33,10 +42,11 @@ def init(force):
 # ── compare ────────────────────────────────────────────────────────────────────
 
 @main.command()
+@click.argument("files", nargs=-1, type=click.Path())
 @click.option("--baseline", default=None,
-              help="Baseline traces: JSONL file path or named source from kalibra.yml.")
+              help="Baseline traces (alternative to positional args).")
 @click.option("--current", default=None,
-              help="Current traces: JSONL file path or named source from kalibra.yml.")
+              help="Current traces (alternative to positional args).")
 @click.option("--format", "out_format",
               type=click.Choice(["terminal", "markdown", "json"]),
               default="terminal", help="Output format (default: terminal).")
@@ -60,25 +70,36 @@ def init(force):
               help="Suppress status messages (config discovery, loading). CI-friendly.")
 @click.option("--metrics", "show_metrics", is_flag=True, default=False,
               help="List all available metrics and their --require threshold fields, then exit.")
-def compare(baseline, current, out_format, require, config_path,
+def compare(files, baseline, current, out_format, require, config_path,
             output, trace_id_field, outcome, cost_field,
             task_id, verbose, quiet, show_metrics):
     """Compare two trace datasets — regression detection, statistical diff.
 
     \b
-    --baseline and --current accept:
-      - A JSONL file path
-      - A named source from kalibra.yml sources: section
-
-    \b
     Examples:
-      kalibra compare --baseline ./baseline.jsonl --current ./current.jsonl
+      kalibra compare baseline.jsonl current.jsonl
+      kalibra compare --baseline a.jsonl --current b.jsonl
       kalibra compare                              (uses kalibra.yml)
       kalibra compare --metrics
     """
     if show_metrics:
         display.metrics_list()
         return
+
+    # Positional args: kalibra compare baseline.jsonl current.jsonl
+    if files:
+        if len(files) == 2:
+            baseline = baseline or files[0]
+            current = current or files[1]
+        elif len(files) == 1:
+            raise click.UsageError(
+                "Two files required: kalibra compare baseline.jsonl current.jsonl"
+            )
+        else:
+            raise click.UsageError(
+                f"Expected 2 files, got {len(files)}. "
+                "Usage: kalibra compare baseline.jsonl current.jsonl"
+            )
 
     from kalibra.commands.compare import run_compare
     run_compare(

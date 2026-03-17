@@ -115,10 +115,11 @@ class TestConfigDiscovery:
         assert "Using" in result.output
         assert "Kalibra Compare" in result.output
 
-    def test_no_config_no_flags_errors(self, runner, tmp_path):
+    def test_no_config_no_flags_shows_welcome(self, runner, tmp_path):
         with runner.isolated_filesystem(temp_dir=tmp_path):
             result = runner.invoke(main, ["compare"])
-        assert result.exit_code != 0
+        assert result.exit_code == 0
+        assert "kalibra demo" in result.output
         assert "kalibra init" in result.output
 
     def test_explicit_config_flag(self, runner, sample_traces, tmp_path):

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import click
@@ -75,19 +74,31 @@ def run_compare(
     current_path = _resolve_path(current, config.current, "current", config)
 
     if not baseline_path or not current_path:
-        raise click.UsageError(
-            "--baseline and --current are required when not set in kalibra.yml.\n\n"
-            "  Run 'kalibra init' to create a config, or pass paths directly:\n"
-            "    kalibra compare --baseline ./baseline.jsonl --current ./current.jsonl"
-        )
+        display.no_data()
+        ctx = click.get_current_context()
+        ctx.exit(0)
 
     # Early file-exists check.
     for label, p in [("Baseline", baseline_path), ("Current", current_path)]:
         if not Path(p).exists():
-            raise click.UsageError(
-                f"{label} path does not exist: {p}\n\n"
-                "  Check the path, or run 'kalibra init' to configure sources."
+            display.header("Kalibra", "file not found")
+            click.echo(
+                f"  {click.style(label, bold=True)} path does not exist: "
+                f"{click.style(p, fg='cyan')}"
             )
+            click.echo()
+            click.echo(f"  {display.bar()}")
+            click.echo(
+                f"  {click.style('Check the path in your', dim=True)} "
+                f"{click.style('kalibra.yml', fg='cyan')}"
+                f"{click.style(', or pass files directly:', dim=True)}"
+            )
+            click.echo(
+                f"  kalibra compare {click.style('baseline.jsonl current.jsonl', dim=True)}"
+            )
+            click.echo()
+            ctx = click.get_current_context()
+            ctx.exit(1)
 
     # ── Validate thresholds early ─────────────────────────────────────────
     active_metrics = resolve_metrics(config.metrics)
