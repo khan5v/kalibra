@@ -50,7 +50,7 @@ class PathDistributionMetric(ComparisonMetric):
         if not baseline or not current:
             return self._no_data(
                 "no traces",
-                "No traces available — path comparison is unavailable",
+                "No trace data found",
             )
 
         b_paths = self._extract_paths(baseline)
@@ -62,7 +62,7 @@ class PathDistributionMetric(ComparisonMetric):
         if not b_top and not c_top:
             return self._no_data(
                 "no paths",
-                "No spans with names — path comparison is unavailable",
+                "No span data found",
             )
 
         union = b_top | c_top

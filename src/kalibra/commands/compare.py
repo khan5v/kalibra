@@ -30,6 +30,9 @@ def run_compare(
     outcome: str | None,
     cost_field: str | None,
     task_id: str | None,
+    input_tokens_field: str | None = None,
+    output_tokens_field: str | None = None,
+    duration_field: str | None = None,
     verbose: bool = False,
     quiet: bool = False,
 ) -> None:
@@ -66,6 +69,12 @@ def run_compare(
         config.fields.outcome = outcome
     if cost_field:
         config.fields.cost = cost_field
+    if input_tokens_field:
+        config.fields.input_tokens = input_tokens_field
+    if output_tokens_field:
+        config.fields.output_tokens = output_tokens_field
+    if duration_field:
+        config.fields.duration = duration_field
     if require:
         config.require = list(require)
 

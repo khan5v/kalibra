@@ -53,10 +53,10 @@ class CostQualityMetric(ComparisonMetric):
         c_cost = sum(t.total_cost for t in current if t.total_cost is not None)
 
         if b_cost == 0 and c_cost == 0:
-            return self._no_data(
-                "no cost data",
-                "All costs are 0 — cost data may not be populated",
-            )
+            has_any = any(t.total_cost is not None for t in baseline) or \
+                      any(t.total_cost is not None for t in current)
+            msg = "All costs are $0" if has_any else "No cost data found"
+            return self._no_data("no cost data", msg)
 
         b_cps = b_cost / b_succ
         c_cps = c_cost / c_succ

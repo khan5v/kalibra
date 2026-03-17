@@ -43,7 +43,7 @@ class ErrorRateMetric(ComparisonMetric):
         if b_total == 0 or c_total == 0:
             return self._no_data(
                 "no span data",
-                "No spans available — error rate comparison is unavailable",
+                "No span data found",
             )
 
         b_rate = b_errors / b_total * 100

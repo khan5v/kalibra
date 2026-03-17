@@ -61,7 +61,7 @@ class DurationMetric(ComparisonMetric):
         if not b_durs or not c_durs:
             return self._no_data(
                 "no duration data",
-                "No traces with timing data — duration comparison is unavailable",
+                "No duration data found",
             )
 
 

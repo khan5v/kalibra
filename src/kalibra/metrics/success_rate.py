@@ -59,7 +59,7 @@ class SuccessRateMetric(ComparisonMetric):
             )
             return self._no_data(
                 "no outcome data",
-                f"No outcome data in {side} — success rate is unavailable",
+                f"No outcome data in {side}",
             )
 
         delta_pp = round((c_rate - b_rate) * 100, 2)

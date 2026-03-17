@@ -17,6 +17,9 @@ def run_inspect(
     outcome: str | None = None,
     cost_field: str | None = None,
     task_id: str | None = None,
+    input_tokens_field: str | None = None,
+    output_tokens_field: str | None = None,
+    duration_field: str | None = None,
     suggest: bool = False,
 ) -> None:
     """Execute the inspect command."""
@@ -42,6 +45,12 @@ def run_inspect(
         config.fields.outcome = outcome
     if cost_field:
         config.fields.cost = cost_field
+    if input_tokens_field:
+        config.fields.input_tokens = input_tokens_field
+    if output_tokens_field:
+        config.fields.output_tokens = output_tokens_field
+    if duration_field:
+        config.fields.duration = duration_field
     if task_id:
         config.fields.task_id = task_id
 
@@ -252,7 +261,7 @@ def run_inspect(
     if needs_cost and has_cost == 0:
         suggestions.append("cost: <span attribute>")
 
-    if suggestions:
+    if suggestions and not suggest:
         click.echo(f"  {b}")
         click.echo(
             f"  {click.style('To fix missing fields, add to', dim=True)} "
@@ -270,12 +279,15 @@ def run_inspect(
 
     # ── Suggest field mappings ────────────────────────────────────────────
     if suggest:
-        all_fields: set[str] = set()
+        # Collect fields with unique value counts for smarter ranking.
+        field_uniques: dict[str, set] = {}
         for t in traces:
-            all_fields.update(t.metadata.keys())
+            for k, v in t.metadata.items():
+                field_uniques.setdefault(k, set()).add(str(v)[:100])
             for s in t.spans:
-                all_fields.update(s.attributes.keys())
-        _print_suggestions(all_fields, b)
+                for k, v in s.attributes.items():
+                    field_uniques.setdefault(k, set()).add(str(v)[:100])
+        _print_suggestions(field_uniques, n, path, b)
 
 
 # ── Suggest logic ────────────────────────────────────────────────────────────
@@ -286,6 +298,7 @@ _ALIASES: dict[str, list[str]] = {
     "trace_id": [
         "trace_id", "id", "uuid", "run_id", "request_id", "instance_id",
         "task_name", "traj_id", "session_id", "experiment_id", "eval_id",
+        "issue_id", "issue_name", "sample_id", "example_id",
     ],
     "outcome": [
         "outcome", "result", "status", "evaluation", "success", "passed",
@@ -308,9 +321,24 @@ _ALIASES: dict[str, list[str]] = {
         "duration", "duration_s", "elapsed", "elapsed_time", "latency",
         "run_time", "execution_time", "wall_time", "time_seconds",
     ],
+    "task_id": [
+        "task_id", "instance_id", "task_name", "problem_id", "question_id",
+        "benchmark_id", "sample_id", "example_id", "test_id", "case_id",
+    ],
 }
 
 _MAX_CANDIDATES = 3
+
+# Map suggest dimensions to CLI flag names.
+_DIM_TO_FLAG = {
+    "trace_id": "--trace-id",
+    "task_id": "--task-id",
+    "outcome": "--outcome",
+    "cost": "--cost",
+    "input_tokens": "--input-tokens",
+    "output_tokens": "--output-tokens",
+    "duration": "--duration",
+}
 
 
 def _score_field(field: str, aliases: list[str]) -> int:
@@ -341,12 +369,15 @@ def _score_field(field: str, aliases: list[str]) -> int:
     return 0
 
 
-def _print_suggestions(all_fields: set[str], bar: str) -> None:
-    """Print field mapping suggestions based on name matching."""
+def _print_suggestions(
+    field_uniques: dict[str, set], n_traces: int, file_path: str, bar: str,
+) -> None:
+    """Print field mapping suggestions and a copy-pasteable compare command."""
     click.echo(f"  {bar}")
     click.echo(f"  {click.style('Suggested field mappings', bold=True)}")
     click.echo()
 
+    all_fields = set(field_uniques.keys())
     best_picks: dict[str, str] = {}
     all_candidates: dict[str, list[tuple[int, str]]] = {}
 
@@ -355,7 +386,16 @@ def _print_suggestions(all_fields: set[str], bar: str) -> None:
         for field in sorted(all_fields):
             s = _score_field(field, aliases)
             if s > 0:
-                scored.append((s, field))
+                n_unique = len(field_uniques.get(field, set()))
+                # Penalize fields useless for this dimension.
+                if dimension == "outcome" and n_unique < 2:
+                    s = max(0, s - 2)
+                if dimension == "trace_id" and n_unique < n_traces * 0.5:
+                    s = max(0, s - 1)
+                if dimension == "task_id" and n_unique >= n_traces * 0.9:
+                    s = max(0, s - 2)  # every trace unique = not a grouping key
+                if s > 0:
+                    scored.append((s, field))
         scored.sort(key=lambda x: (-x[0], len(x[1])))
         all_candidates[dimension] = scored[:_MAX_CANDIDATES]
 
@@ -383,14 +423,52 @@ def _print_suggestions(all_fields: set[str], bar: str) -> None:
 
         click.echo()
 
-    if best_picks:
-        click.echo(f"  {click.style('To apply, add to', dim=True)} "
-                    f"{click.style('kalibra.yml', fg='cyan')}"
-                    f"{click.style(':', dim=True)}")
-        click.echo()
-        click.echo(click.style("    fields:", dim=True))
-        for dim in _ALIASES:
-            pick = best_picks.get(dim)
-            val = pick if pick else "<chosen field>"
-            click.echo(click.style(f"      {dim}: {val}", dim=True))
-        click.echo()
+    if not best_picks:
+        return
+
+    # Build CLI flags from confident picks.
+    flags: list[str] = []
+    for dim, pick in best_picks.items():
+        if dim == "trace_id" and pick == "trace_id":
+            continue
+        flag = _DIM_TO_FLAG.get(dim)
+        if flag:
+            flags.append(f"{flag} {pick}")
+
+    if not flags:
+        return
+
+    # ── Two paths: quick (flags) or persistent (config) ──────────────
+    click.echo(f"  {click.style('Option 1 — quick compare with flags:', bold=True)}")
+    click.echo()
+    cmd = f"    kalibra compare {file_path} <current.jsonl>"
+    if len(flags) <= 2:
+        cmd += " " + " ".join(flags)
+        click.echo(f"  {cmd}")
+    else:
+        click.echo(f"  {cmd} \\")
+        for i, flag in enumerate(flags):
+            suffix = " \\" if i < len(flags) - 1 else ""
+            click.echo(f"      {flag}{suffix}")
+    click.echo()
+
+    click.echo(f"  {click.style('Option 2 — save to config (reusable, supports CI gates):', bold=True)}")
+    click.echo()
+    click.echo(click.style("    # kalibra init to create kalibra.yml, then add:", dim=True))
+    click.echo(click.style("    fields:", dim=True))
+    for dim in _ALIASES:
+        pick = best_picks.get(dim)
+        if pick:
+            click.echo(click.style(f"      {dim}: {pick}", dim=True))
+    click.echo()
+
+    click.echo(
+        f"  {click.style('Replace <current.jsonl> with your second file.', dim=True)}"
+    )
+    click.echo(
+        f"  {click.style('Same format assumed for both files. If they differ, use config', dim=True)}"
+    )
+    click.echo(
+        f"  {click.style('with per-source field overrides — see README.', dim=True)}"
+    )
+    click.echo()

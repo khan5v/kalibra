@@ -55,10 +55,10 @@ class CostMetric(ComparisonMetric):
                    if t.total_cost is not None and t.total_cost > 0]
 
         if not b_costs and not c_costs:
-            return self._no_data(
-                "no cost data",
-                "All trace costs are $0 — cost data may not be populated",
-            )
+            has_any = any(t.total_cost is not None for t in baseline) or \
+                      any(t.total_cost is not None for t in current)
+            msg = "All trace costs are $0" if has_any else "No cost data found"
+            return self._no_data("no cost data", msg)
 
         warnings: list[str] = []
         b_coverage = len(b_costs) / len(baseline) if baseline else 0

@@ -54,10 +54,10 @@ class TokenUsageMetric(ComparisonMetric):
                    if t.total_tokens is not None and t.total_tokens > 0]
 
         if not b_total and not c_total:
-            return self._no_data(
-                "no token data",
-                "All token counts are 0 — token data may not be populated",
-            )
+            has_any = any(t.total_tokens is not None for t in baseline) or \
+                      any(t.total_tokens is not None for t in current)
+            msg = "All token counts are 0" if has_any else "No token data found"
+            return self._no_data("no token data", msg)
 
         warnings: list[str] = []
         b_coverage = len(b_total) / len(baseline) if baseline else 0

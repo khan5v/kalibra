@@ -47,7 +47,7 @@ class TraceBreakdownMetric(ComparisonMetric):
         if not all_task_ids:
             return self._no_data(
                 "no task data",
-                "No tasks found — trace breakdown is unavailable",
+                "No task data found",
             )
 
         regressions: list[dict] = []

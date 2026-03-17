@@ -21,6 +21,7 @@ class FieldsConfig:
     cost: str | None = None
     input_tokens: str | None = None
     output_tokens: str | None = None
+    duration: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict | None) -> FieldsConfig:
@@ -33,6 +34,7 @@ class FieldsConfig:
             cost=data.get("cost"),
             input_tokens=data.get("input_tokens"),
             output_tokens=data.get("output_tokens"),
+            duration=data.get("duration"),
         )
 
     def merge(self, override: FieldsConfig | None) -> FieldsConfig:
@@ -46,6 +48,7 @@ class FieldsConfig:
             cost=override.cost or self.cost,
             input_tokens=override.input_tokens or self.input_tokens,
             output_tokens=override.output_tokens or self.output_tokens,
+            duration=override.duration or self.duration,
         )
 
 

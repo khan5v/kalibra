@@ -64,6 +64,12 @@ def init(force):
               help="Field path for cost (e.g. agent_cost.total_cost).")
 @click.option("--task-id", default=None,
               help="Field path for per-task matching (e.g. metadata.task_name).")
+@click.option("--input-tokens", "input_tokens_field", default=None,
+              help="Field path for input tokens (e.g. usage.prompt_tokens).")
+@click.option("--output-tokens", "output_tokens_field", default=None,
+              help="Field path for output tokens (e.g. usage.completion_tokens).")
+@click.option("--duration", "duration_field", default=None,
+              help="Field path for duration (e.g. elapsed_time).")
 @click.option("-v", "--verbose", is_flag=True, default=False,
               help="Show detailed output — per-span breakdown, CIs, p-values.")
 @click.option("-q", "--quiet", is_flag=True, default=False,
@@ -72,7 +78,8 @@ def init(force):
               help="List all available metrics and their --require threshold fields, then exit.")
 def compare(files, baseline, current, out_format, require, config_path,
             output, trace_id_field, outcome, cost_field,
-            task_id, verbose, quiet, show_metrics):
+            task_id, input_tokens_field, output_tokens_field, duration_field,
+            verbose, quiet, show_metrics):
     """Compare two trace datasets — regression detection, statistical diff.
 
     \b
@@ -108,6 +115,9 @@ def compare(files, baseline, current, out_format, require, config_path,
         output=output,
         trace_id_field=trace_id_field, outcome=outcome,
         cost_field=cost_field, task_id=task_id,
+        input_tokens_field=input_tokens_field,
+        output_tokens_field=output_tokens_field,
+        duration_field=duration_field,
         verbose=verbose, quiet=quiet,
     )
 
@@ -126,9 +136,16 @@ def compare(files, baseline, current, out_format, require, config_path,
               help="Field path for cost (e.g. agent_cost.total_cost).")
 @click.option("--task-id", default=None,
               help="Field path for per-task matching (e.g. metadata.task_name).")
+@click.option("--input-tokens", "input_tokens_field", default=None,
+              help="Field path for input tokens (e.g. usage.prompt_tokens).")
+@click.option("--output-tokens", "output_tokens_field", default=None,
+              help="Field path for output tokens (e.g. usage.completion_tokens).")
+@click.option("--duration", "duration_field", default=None,
+              help="Field path for duration (e.g. elapsed_time).")
 @click.option("--suggest", is_flag=True, default=False,
               help="Suggest field mappings based on field names in the data.")
-def inspect(path, config_path, trace_id_field, outcome, cost_field, task_id, suggest):
+def inspect(path, config_path, trace_id_field, outcome, cost_field, task_id,
+            input_tokens_field, output_tokens_field, duration_field, suggest):
     """Inspect a trace file — show data coverage, available fields, and config suggestions.
 
     \b
@@ -142,5 +159,8 @@ def inspect(path, config_path, trace_id_field, outcome, cost_field, task_id, sug
         path, config_path,
         trace_id_field=trace_id_field, outcome=outcome,
         cost_field=cost_field, task_id=task_id,
+        input_tokens_field=input_tokens_field,
+        output_tokens_field=output_tokens_field,
+        duration_field=duration_field,
         suggest=suggest,
     )

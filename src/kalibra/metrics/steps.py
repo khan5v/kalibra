@@ -53,7 +53,7 @@ class StepsMetric(ComparisonMetric):
         if not b_steps or not c_steps:
             return self._no_data(
                 "no step data",
-                "No traces available — step comparison is unavailable",
+                "No span data found",
             )
 
 

@@ -494,9 +494,10 @@ def _apply_fields(traces: list[Trace], fields: object) -> None:
     input_tokens_field = getattr(fields, "input_tokens", None)
     output_tokens_field = getattr(fields, "output_tokens", None)
     task_id_field = getattr(fields, "task_id", None)
+    duration_field = getattr(fields, "duration", None)
 
     if not any([outcome_field, cost_field, input_tokens_field,
-                output_tokens_field, task_id_field]):
+                output_tokens_field, task_id_field, duration_field]):
         return
 
     for trace in traces:
@@ -550,6 +551,10 @@ def _apply_fields(traces: list[Trace], fields: object) -> None:
                     val = _resolve_dot_path(trace.metadata, output_tokens_field)
                     if val is not None:
                         trace._output_tokens = int(val)
+                if duration_field and trace._duration_s is None:
+                    val = _resolve_dot_path(trace.metadata, duration_field)
+                    if val is not None:
+                        trace._duration_s = float(val)
 
 
 def _classify_outcome(val) -> str | None:

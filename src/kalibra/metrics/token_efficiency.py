@@ -51,10 +51,10 @@ class TokenEfficiencyMetric(ComparisonMetric):
         c_tokens = sum(t.total_tokens for t in current if t.total_tokens is not None)
 
         if b_tokens == 0 and c_tokens == 0:
-            return self._no_data(
-                "no token data",
-                "All token counts are 0 — token efficiency unavailable",
-            )
+            has_any = any(t.total_tokens is not None for t in baseline) or \
+                      any(t.total_tokens is not None for t in current)
+            msg = "All token counts are 0" if has_any else "No token data found"
+            return self._no_data("no token data", msg)
 
         b_tps = b_tokens / b_succ
         c_tps = c_tokens / c_succ
