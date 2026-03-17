@@ -6,6 +6,7 @@ plus optional breakdown sections and gate results.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -15,11 +16,11 @@ from kalibra.metrics import Direction, Observation
 from kalibra.renderers import METRIC_LABEL
 
 _BADGE = {
-    Direction.UPGRADE: ":arrow_up:",
-    Direction.SAME: ":heavy_minus_sign:",
-    Direction.DEGRADATION: ":arrow_down:",
-    Direction.INCONCLUSIVE: ":warning:",
-    Direction.NA: ":grey_question:",
+    Direction.UPGRADE: "▲",
+    Direction.SAME: "—",
+    Direction.DEGRADATION: "▼",
+    Direction.INCONCLUSIVE: "⚠",
+    Direction.NA: "–",
 }
 
 _LABEL = {
@@ -143,7 +144,7 @@ def render_markdown(result: CompareResult, verbose: bool = False) -> str:
             )):
                 entry = changed[name]
                 d = entry.get("direction", "unchanged")
-                d_badge = ":arrow_down:" if d == "regressed" else ":arrow_up:"
+                d_badge = "▼" if d == "regressed" else "▲"
                 b = entry.get("baseline", {})
                 c = entry.get("current", {})
                 deltas = entry.get("deltas", {})
@@ -161,21 +162,21 @@ def render_markdown(result: CompareResult, verbose: bool = False) -> str:
         lines.append("|------|--------|--------|")
         for g in result.gates:
             if g.warning:
-                icon = ":warning: SKIP"
+                icon = "⚠ SKIP"
             elif g.passed:
-                icon = ":white_check_mark: PASS"
+                icon = "✅ PASS"
             else:
-                icon = ":x: FAIL"
-            actual = f"{g.actual:.2f}" if g.actual == g.actual else "n/a"
+                icon = "❌ FAIL"
+            actual = f"{g.actual:.2f}" if not math.isnan(g.actual) else "n/a"
             lines.append(f"| `{g.expr}` | {icon} | {actual} |")
         lines.append("")
 
     # Verdict
     if result.gates:
         if result.passed:
-            lines.append(":white_check_mark: **All quality gates passed**")
+            lines.append("✅ **All quality gates passed**")
         else:
-            lines.append(":x: **Quality gate violation**")
+            lines.append("❌ **Quality gate violation**")
     lines.append("")
 
     return "\n".join(lines)

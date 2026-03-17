@@ -7,6 +7,7 @@ indentation, and section grouping.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import click
@@ -129,7 +130,7 @@ def render_terminal(result: CompareResult, verbose: bool = False) -> str:
                 icon = click.style(" OK ", fg="green", bold=True)
             else:
                 icon = click.style("FAIL", fg="red", bold=True)
-            actual = f"{g.actual:.2f}" if g.actual == g.actual else "n/a"
+            actual = f"{g.actual:.2f}" if not math.isnan(g.actual) else "n/a"
             line = (f"{_INDENT}  [{icon}] "
                     f"{g.expr:<{max_expr}}   actual: {actual}")
             if g.warning:
