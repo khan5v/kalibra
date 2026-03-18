@@ -40,12 +40,12 @@ class CostQualityMetric(ComparisonMetric):
         # Per-trace cost for successful traces only.
         b_values = [t.total_cost for t in baseline
                     if t.outcome == OUTCOME_SUCCESS
-                    and t.total_cost is not None and t.total_cost > 0]
+                    and t.total_cost is not None]
         c_values = [t.total_cost for t in current
                     if t.outcome == OUTCOME_SUCCESS
-                    and t.total_cost is not None and t.total_cost > 0]
+                    and t.total_cost is not None]
 
-        if not b_values and not c_values:
+        if not b_values or not c_values:
             b_succ = sum(1 for t in baseline if t.outcome == OUTCOME_SUCCESS)
             c_succ = sum(1 for t in current if t.outcome == OUTCOME_SUCCESS)
             if b_succ == 0 or c_succ == 0:

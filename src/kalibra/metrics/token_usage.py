@@ -48,15 +48,12 @@ class TokenUsageMetric(ComparisonMetric):
     ) -> Observation:
         # Filter to traces with token data. None = not measured.
         b_total = [float(t.total_tokens) for t in baseline
-                   if t.total_tokens is not None and t.total_tokens > 0]
+                   if t.total_tokens is not None]
         c_total = [float(t.total_tokens) for t in current
-                   if t.total_tokens is not None and t.total_tokens > 0]
+                   if t.total_tokens is not None]
 
-        if not b_total and not c_total:
-            has_any = any(t.total_tokens is not None for t in baseline) or \
-                      any(t.total_tokens is not None for t in current)
-            msg = "All token counts are 0" if has_any else "No token data found"
-            return self._no_data("no token data", msg)
+        if not b_total or not c_total:
+            return self._no_data("no token data", "No token data found")
 
         warnings: list[str] = []
         b_coverage = len(b_total) / len(baseline) if baseline else 0
@@ -66,7 +63,6 @@ class TokenUsageMetric(ComparisonMetric):
                 f"Token data in {len(b_total)}/{len(baseline)} baseline, "
                 f"{len(c_total)}/{len(current)} current traces"
             )
-
 
         b_med = median(b_total)
         c_med = median(c_total)

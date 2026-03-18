@@ -15,7 +15,6 @@ Statistical approach:
 
 Threshold fields:
     duration_delta_pct: median duration change (%)
-    duration_median_delta_pct: same as above (explicit alias)
     duration_p95_delta_pct: P95 duration change (%)
     total_duration: total wall-clock duration of current run (seconds)
 """
@@ -55,17 +54,14 @@ class DurationMetric(ComparisonMetric):
         current: list[Trace],
     ) -> Observation:
         # Filter to traces with timing data. None = not measured.
-        b_durs = [t.duration for t in baseline
-                  if t.duration is not None and t.duration > 0]
-        c_durs = [t.duration for t in current
-                  if t.duration is not None and t.duration > 0]
+        b_durs = [t.duration for t in baseline if t.duration is not None]
+        c_durs = [t.duration for t in current if t.duration is not None]
 
         if not b_durs or not c_durs:
             return self._no_data(
                 "no duration data",
                 "No duration data found",
             )
-
 
         b_med = median(b_durs)
         c_med = median(c_durs)

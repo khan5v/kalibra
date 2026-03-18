@@ -48,16 +48,11 @@ class CostMetric(ComparisonMetric):
         current: list[Trace],
     ) -> Observation:
         # Filter to traces with cost data. None = not measured, 0 = free.
-        b_costs = [t.total_cost for t in baseline
-                   if t.total_cost is not None and t.total_cost > 0]
-        c_costs = [t.total_cost for t in current
-                   if t.total_cost is not None and t.total_cost > 0]
+        b_costs = [t.total_cost for t in baseline if t.total_cost is not None]
+        c_costs = [t.total_cost for t in current if t.total_cost is not None]
 
-        if not b_costs and not c_costs:
-            has_any = any(t.total_cost is not None for t in baseline) or \
-                      any(t.total_cost is not None for t in current)
-            msg = "All trace costs are $0" if has_any else "No cost data found"
-            return self._no_data("no cost data", msg)
+        if not b_costs or not c_costs:
+            return self._no_data("no cost data", "No cost data found")
 
         warnings: list[str] = []
         b_coverage = len(b_costs) / len(baseline) if baseline else 0
@@ -67,7 +62,6 @@ class CostMetric(ComparisonMetric):
                 f"Cost data in {len(b_costs)}/{len(baseline)} baseline, "
                 f"{len(c_costs)}/{len(current)} current traces"
             )
-
 
         b_med = median(b_costs)
         c_med = median(c_costs)

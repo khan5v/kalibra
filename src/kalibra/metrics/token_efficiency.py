@@ -38,12 +38,12 @@ class TokenEfficiencyMetric(ComparisonMetric):
         # Per-trace tokens for successful traces only.
         b_values = [float(t.total_tokens) for t in baseline
                     if t.outcome == OUTCOME_SUCCESS
-                    and t.total_tokens is not None and t.total_tokens > 0]
+                    and t.total_tokens is not None]
         c_values = [float(t.total_tokens) for t in current
                     if t.outcome == OUTCOME_SUCCESS
-                    and t.total_tokens is not None and t.total_tokens > 0]
+                    and t.total_tokens is not None]
 
-        if not b_values and not c_values:
+        if not b_values or not c_values:
             # Distinguish "no successes" from "no token data"
             b_succ = sum(1 for t in baseline if t.outcome == OUTCOME_SUCCESS)
             c_succ = sum(1 for t in current if t.outcome == OUTCOME_SUCCESS)

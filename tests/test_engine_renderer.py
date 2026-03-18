@@ -501,6 +501,89 @@ class TestEdgeCases:
         output = render_terminal(result)
         assert "Kalibra Compare" in output
 
+    def test_one_sided_cost_data_returns_na(self):
+        """Bug fix: if only one population has cost data, return N/A, not bogus delta."""
+        baseline = [
+            Trace(trace_id=f"b-{i}", spans=[_make_span(cost=0.05)],
+                  outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+        # Current traces have no cost data (span-less, no _cost).
+        current = [
+            Trace(trace_id=f"c-{i}", outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+
+        result = compare(baseline, current, metrics=["cost"])
+        obs = result.observations["cost"]
+        assert obs.direction == Direction.NA
+
+    def test_one_sided_token_data_returns_na(self):
+        """Bug fix: if only one population has token data, return N/A."""
+        baseline = [
+            Trace(trace_id=f"b-{i}", spans=[_make_span(input_tokens=500, output_tokens=200)],
+                  outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+        current = [
+            Trace(trace_id=f"c-{i}", outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+
+        result = compare(baseline, current, metrics=["token_usage"])
+        obs = result.observations["token_usage"]
+        assert obs.direction == Direction.NA
+
+    def test_one_sided_cost_quality_returns_na(self):
+        """Bug fix: if only baseline has cost for successes, return N/A."""
+        baseline = [
+            Trace(trace_id=f"b-{i}", spans=[_make_span(cost=0.05)],
+                  outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+        current = [
+            Trace(trace_id=f"c-{i}", outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+
+        result = compare(baseline, current, metrics=["cost_quality"])
+        obs = result.observations["cost_quality"]
+        assert obs.direction == Direction.NA
+
+    def test_one_sided_token_efficiency_returns_na(self):
+        """Bug fix: if only baseline has tokens for successes, return N/A."""
+        baseline = [
+            Trace(trace_id=f"b-{i}", spans=[_make_span(input_tokens=500, output_tokens=200)],
+                  outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+        current = [
+            Trace(trace_id=f"c-{i}", outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+
+        result = compare(baseline, current, metrics=["token_efficiency"])
+        obs = result.observations["token_efficiency"]
+        assert obs.direction == Direction.NA
+
+    def test_zero_cost_included_in_median(self):
+        """Bug fix: 0 cost means measured as zero, not absent. Must be included."""
+        baseline = [
+            Trace(trace_id=f"b-{i}", _cost=0.10, outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+        # Half cost $0 (free/cached), half cost $0.10.
+        current = [
+            Trace(trace_id=f"c-{i}", _cost=0.0 if i < 10 else 0.10,
+                  outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+
+        result = compare(baseline, current, metrics=["cost"])
+        obs = result.observations["cost"]
+        # Median should be $0.05, not $0.10 (which would happen if zeros were excluded).
+        assert obs.current["median"] < 0.10
+
     def test_all_renderers_no_crash(self):
         """All three renderers should handle any CompareResult without crashing."""
         random.seed(42)
