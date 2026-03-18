@@ -300,8 +300,6 @@ def _format_duration(obs: Observation, verbose: bool) -> tuple[str, list[str]]:
     if verbose:
         avg_delta = pct_delta(b["avg"], c["avg"])
         details.append(f"{b['avg']:.1f}s → {c['avg']:.1f}s avg  {_delta_str(avg_delta)}")
-        p95_delta = obs.metadata.get("p95_delta_pct")
-        details.append(f"{b['p95']:.1f}s → {c['p95']:.1f}s P95  {_delta_str(p95_delta)}")
         ci = obs.metadata.get("ci_95")
         if ci:
             details.append(f"95% CI [{ci[0]:+.1f}%, {ci[1]:+.1f}%]")

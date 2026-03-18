@@ -51,7 +51,7 @@ kalibra demo
   ~ MIXED — no quality gates configured
 ```
 
-Add `-v` for per-task outcome changes, per-span breakdowns, confidence intervals, and P95s.
+Add `-v` for per-task outcome changes, per-span breakdowns, and confidence intervals.
 
 ## Why Kalibra
 
@@ -160,7 +160,7 @@ print("passed:", result.passed)
 
 ```
 kalibra compare [a.jsonl b.jsonl]     Compare traces — flags, config, or positional args
-kalibra compare -v                    Verbose — CIs, P95s, per-task/per-span detail
+kalibra compare -v                    Verbose — CIs, per-task/per-span detail
 kalibra compare --format markdown     Markdown for PR comments
 kalibra compare --format json         Machine-readable JSON
 kalibra compare --metrics             List all threshold fields

@@ -2,20 +2,17 @@
 
 Computation:
     For each trace, compute wall-clock duration (max end - min start across spans).
-    Also compute P95 from sorted per-span durations.
 
 Statistical approach:
     Headline: median duration change (resistant to outliers from retries/timeouts).
-    Detail: mean duration, P95, bootstrap 95% CI on median.
+    Detail: mean duration, bootstrap 95% CI on median.
     Bootstrap CI for confidence on the median delta.
         Appropriate because duration distributions are typically right-skewed.
     Direction: lower duration is better (higher_is_better = False).
     Noise threshold: 5% — duration changes below this are treated as unchanged.
-    Warning: if < 100 traces, P95 estimate may be unreliable.
 
 Threshold fields:
     duration_delta_pct: median duration change (%)
-    duration_p95_delta_pct: P95 duration change (%)
     total_duration: total wall-clock duration of current run (seconds)
 """
 
@@ -27,24 +24,17 @@ from kalibra.metrics._stats import (
     mean,
     median,
     pct_delta,
-    percentile,
 )
 from kalibra.model import Trace
-
-# P95 needs more data than median — at n=30 you're estimating from the
-# 2nd-largest value. At n=100 you have ~5 values in the tail. Some
-# practitioners use 200-500; 100 is a reasonable lower bound for a warning.
-_MIN_P95_N = 100
 
 
 class DurationMetric(ComparisonMetric):
     name = "duration"
-    description = "Trace duration — median, average, and P95"
+    description = "Trace duration — median and average"
     noise_threshold = 5.0  # % — looser for duration which has high natural variance
     higher_is_better = False
     _fields = {
         "duration_delta_pct": "Median duration change (%)",
-        "duration_p95_delta_pct": "P95 duration change (%)",
         "total_duration": "Total duration of current run (seconds)",
     }
 
@@ -68,20 +58,6 @@ class DurationMetric(ComparisonMetric):
         delta = pct_delta(b_med, c_med)
         ci = bootstrap_ci(b_durs, c_durs, stat_fn=median)
 
-        b_sorted = sorted(b_durs)
-        c_sorted = sorted(c_durs)
-        b_p95 = percentile(b_sorted, 95)
-        c_p95 = percentile(c_sorted, 95)
-        p95_delta = pct_delta(b_p95, c_p95)
-
-        warnings: list[str] = []
-        small = min(len(b_durs), len(c_durs))
-        if small < _MIN_P95_N:
-            warnings.append(
-                f"Only {small} traces — P95 estimate may be unreliable, "
-                f"recommend ≥{_MIN_P95_N}"
-            )
-
         return Observation(
             name=self.name,
             description=self.description,
@@ -90,28 +66,22 @@ class DurationMetric(ComparisonMetric):
             baseline={
                 "median": b_med,
                 "avg": mean(b_durs),
-                "p95": b_p95,
                 "total": sum(b_durs),
             },
             current={
                 "median": c_med,
                 "avg": mean(c_durs),
-                "p95": c_p95,
                 "total": sum(c_durs),
             },
             metadata={
                 "ci_95": ci,
-                "p95_delta_pct": p95_delta,
             },
-            warnings=warnings,
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         fields: dict[str, float] = {}
         if result.delta is not None:
             fields["duration_delta_pct"] = result.delta
-        if result.metadata.get("p95_delta_pct") is not None:
-            fields["duration_p95_delta_pct"] = result.metadata["p95_delta_pct"]
         if result.current:
             fields["total_duration"] = result.current.get("total", 0)
         return fields

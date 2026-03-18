@@ -62,7 +62,7 @@ def _generate_config(baseline_path: str, current_path: str) -> str:
         "  - success_rate        # task pass/fail rate + significance test",
         "  - cost                # cost per trace — median, avg, total",
         "  - steps               # steps per task — median and avg",
-        "  - duration            # latency — median, avg, P95",
+        "  - duration            # latency — median, avg",
         "  - error_rate          # fraction of spans that error",
         "  - token_usage         # token consumption — in/out/total",
         "  - token_efficiency    # tokens per successful task",

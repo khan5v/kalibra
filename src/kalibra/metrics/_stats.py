@@ -31,14 +31,6 @@ def median(values: list[float]) -> float:
     return (s[n // 2 - 1] + s[n // 2]) / 2
 
 
-def percentile(sorted_values: list[float], pct: int) -> float:
-    """Percentile from pre-sorted values. Returns 0.0 for empty list."""
-    if not sorted_values:
-        return 0.0
-    idx = min(int(len(sorted_values) * pct / 100), len(sorted_values) - 1)
-    return sorted_values[idx]
-
-
 def pct_delta(base: float, curr: float) -> float | None:
     """Percentage change from base to curr.
 
