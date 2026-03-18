@@ -7,7 +7,7 @@ Computation:
 Statistical approach:
     Headline: median step count change (resistant to outlier traces with retries).
     Detail: mean steps, bootstrap 95% CI on median.
-    Optional: Mann-Whitney U test — non-parametric.
+    Bootstrap CI for confidence on the median delta.
     Direction: fewer steps is better (higher_is_better = False).
     Noise threshold: 3% — step count changes below this are noise.
 
@@ -22,7 +22,6 @@ from __future__ import annotations
 from kalibra.metrics import ComparisonMetric, Observation
 from kalibra.metrics._stats import (
     bootstrap_ci,
-    mannwhitney,
     mean,
     median,
     pct_delta,
@@ -60,13 +59,12 @@ class StepsMetric(ComparisonMetric):
         b_med = median(b_steps)
         c_med = median(c_steps)
         delta = pct_delta(b_med, c_med)
-        mw = mannwhitney(b_steps, c_steps)
         ci = bootstrap_ci(b_steps, c_steps, stat_fn=median)
 
         return Observation(
             name=self.name,
             description=self.description,
-            direction=self._classify(delta, mw),
+            direction=self._classify(delta, ci),
             delta=delta,
             baseline={
                 "median": b_med,
@@ -78,7 +76,6 @@ class StepsMetric(ComparisonMetric):
             },
             metadata={
                 "ci_95": ci,
-                "mannwhitney": mw,
             },
         )
 

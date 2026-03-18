@@ -7,7 +7,7 @@ Computation:
 Statistical approach:
     Headline: median total-token change (resistant to outlier traces).
     Detail: mean tokens, input/output breakdown, bootstrap 95% CI on median.
-    Optional: Mann-Whitney U test — non-parametric.
+    Bootstrap CI for confidence on the median delta.
     Direction: fewer tokens is better (higher_is_better = False).
     Noise threshold: 3% — token changes below this are noise.
     Handles all-zero case: if all tokens are 0 in both populations, returns n/a.
@@ -23,7 +23,6 @@ from __future__ import annotations
 from kalibra.metrics import ComparisonMetric, Observation
 from kalibra.metrics._stats import (
     bootstrap_ci,
-    mannwhitney,
     mean,
     median,
     pct_delta,
@@ -72,7 +71,6 @@ class TokenUsageMetric(ComparisonMetric):
         b_med = median(b_total)
         c_med = median(c_total)
         delta = pct_delta(b_med, c_med)
-        mw = mannwhitney(b_total, c_total)
         ci = bootstrap_ci(b_total, c_total, stat_fn=median)
 
         b_input = sum(s.input_tokens for t in baseline for s in t.spans)
@@ -83,7 +81,7 @@ class TokenUsageMetric(ComparisonMetric):
         return Observation(
             name=self.name,
             description=self.description,
-            direction=self._classify(delta, mw),
+            direction=self._classify(delta, ci),
             delta=delta,
             baseline={
                 "median": b_med,
@@ -101,7 +99,6 @@ class TokenUsageMetric(ComparisonMetric):
             },
             metadata={
                 "ci_95": ci,
-                "mannwhitney": mw,
             },
             warnings=warnings,
         )

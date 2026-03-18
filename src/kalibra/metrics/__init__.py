@@ -97,12 +97,21 @@ class ComparisonMetric(ABC):
     def _classify(
         self,
         delta: float | None,
-        mw: dict | None = None,
+        ci: tuple[float, float] | None = None,
     ) -> Direction:
-        """Classify direction from delta and optional Mann-Whitney result."""
+        """Classify direction from delta and optional bootstrap CI.
+
+        CI-based significance: if the confidence interval on the percentage
+        delta includes zero, the change is not significant — even if the
+        point estimate is large. This directly tests "did the median shift?"
+        which is the claim we're making.
+
+        Noise threshold: if the delta is real but trivially small (e.g. 0.3%
+        cost change), classify as SAME regardless of significance.
+        """
         if delta is None:
             return Direction.NA
-        if mw and not mw.get("significant", True):
+        if ci is not None and ci[0] <= 0 <= ci[1]:
             return Direction.SAME
         if abs(delta) <= self.noise_threshold:
             return Direction.SAME

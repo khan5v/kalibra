@@ -268,10 +268,7 @@ def _format_cost(obs: Observation, verbose: bool) -> tuple[str, list[str]]:
         ci = obs.metadata.get("ci_95")
         if ci:
             details.append(f"95% CI [{ci[0]:+.1f}%, {ci[1]:+.1f}%]")
-        mw = obs.metadata.get("mannwhitney")
-        if mw:
-            sig = "statistically significant" if mw["significant"] else "not statistically significant"
-            details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — {sig}")
+
     return headline, details
 
 
@@ -290,10 +287,7 @@ def _format_steps(obs: Observation, verbose: bool) -> tuple[str, list[str]]:
         ci = obs.metadata.get("ci_95")
         if ci:
             details.append(f"95% CI [{ci[0]:+.1f}%, {ci[1]:+.1f}%]")
-        mw = obs.metadata.get("mannwhitney")
-        if mw:
-            sig = "statistically significant" if mw["significant"] else "not statistically significant"
-            details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — {sig}")
+
     return headline, details
 
 
@@ -311,10 +305,7 @@ def _format_duration(obs: Observation, verbose: bool) -> tuple[str, list[str]]:
         ci = obs.metadata.get("ci_95")
         if ci:
             details.append(f"95% CI [{ci[0]:+.1f}%, {ci[1]:+.1f}%]")
-        mw = obs.metadata.get("mannwhitney")
-        if mw:
-            sig = "statistically significant" if mw["significant"] else "not statistically significant"
-            details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — {sig}")
+
     return headline, details
 
 
@@ -363,10 +354,7 @@ def _format_token_usage(obs: Observation, verbose: bool) -> tuple[str, list[str]
         ci = obs.metadata.get("ci_95")
         if ci:
             details.append(f"95% CI [{ci[0]:+.1f}%, {ci[1]:+.1f}%]")
-        mw = obs.metadata.get("mannwhitney")
-        if mw:
-            sig = "statistically significant" if mw["significant"] else "not statistically significant"
-            details.append(f"Mann-Whitney U p={mw['pvalue']:.3f} — {sig}")
+
     return headline, details
 
 

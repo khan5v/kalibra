@@ -7,7 +7,7 @@ Computation:
 Statistical approach:
     Headline: median duration change (resistant to outliers from retries/timeouts).
     Detail: mean duration, P95, bootstrap 95% CI on median.
-    Optional: Mann-Whitney U test — non-parametric, no normality assumption.
+    Bootstrap CI for confidence on the median delta.
         Appropriate because duration distributions are typically right-skewed.
     Direction: lower duration is better (higher_is_better = False).
     Noise threshold: 5% — duration changes below this are treated as unchanged.
@@ -25,7 +25,6 @@ from __future__ import annotations
 from kalibra.metrics import ComparisonMetric, Observation
 from kalibra.metrics._stats import (
     bootstrap_ci,
-    mannwhitney,
     mean,
     median,
     pct_delta,
@@ -71,7 +70,6 @@ class DurationMetric(ComparisonMetric):
         b_med = median(b_durs)
         c_med = median(c_durs)
         delta = pct_delta(b_med, c_med)
-        mw = mannwhitney(b_durs, c_durs)
         ci = bootstrap_ci(b_durs, c_durs, stat_fn=median)
 
         b_sorted = sorted(b_durs)
@@ -91,7 +89,7 @@ class DurationMetric(ComparisonMetric):
         return Observation(
             name=self.name,
             description=self.description,
-            direction=self._classify(delta, mw),
+            direction=self._classify(delta, ci),
             delta=delta,
             baseline={
                 "median": b_med,
@@ -107,7 +105,6 @@ class DurationMetric(ComparisonMetric):
             },
             metadata={
                 "ci_95": ci,
-                "mannwhitney": mw,
                 "p95_delta_pct": p95_delta,
             },
             warnings=warnings,

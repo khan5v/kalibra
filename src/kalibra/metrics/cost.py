@@ -8,7 +8,7 @@ Statistical approach:
     Headline: median cost change (resistant to outliers in cost data,
         where a few expensive traces can skew the mean).
     Detail: mean cost, total cost, bootstrap 95% CI on median.
-    Optional: Mann-Whitney U test — non-parametric, no normality assumption.
+    Bootstrap CI for confidence on the median delta.
         Appropriate because cost distributions are typically right-skewed.
     Direction: lower cost is better (higher_is_better = False).
     Noise threshold: 3% — cost changes below this are treated as unchanged.
@@ -24,7 +24,6 @@ from __future__ import annotations
 from kalibra.metrics import ComparisonMetric, Observation
 from kalibra.metrics._stats import (
     bootstrap_ci,
-    mannwhitney,
     mean,
     median,
     pct_delta,
@@ -73,13 +72,12 @@ class CostMetric(ComparisonMetric):
         b_med = median(b_costs)
         c_med = median(c_costs)
         delta = pct_delta(b_med, c_med)
-        mw = mannwhitney(b_costs, c_costs)
         ci = bootstrap_ci(b_costs, c_costs, stat_fn=median)
 
         return Observation(
             name=self.name,
             description=self.description,
-            direction=self._classify(delta, mw),
+            direction=self._classify(delta, ci),
             delta=delta,
             baseline={
                 "median": b_med,
@@ -93,7 +91,6 @@ class CostMetric(ComparisonMetric):
             },
             metadata={
                 "ci_95": ci,
-                "mannwhitney": mw,
             },
             warnings=warnings,
         )

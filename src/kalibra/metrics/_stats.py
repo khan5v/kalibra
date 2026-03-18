@@ -5,7 +5,6 @@ All metrics use these building blocks. No metric reimplements basic stats.
 Statistical notes:
 - Median is preferred over mean for headline comparisons (resistant to outliers).
 - Bootstrap CI gives distribution-free confidence intervals on any statistic.
-- Mann-Whitney U is the non-parametric test for "are these two distributions different?"
   No normality assumption. Works with any sample size ≥ 2.
 - Two-proportion z-test is for binary outcomes (success rate).
 """
@@ -96,38 +95,6 @@ def bootstrap_ci(
     return (round(deltas[lo], 1), round(deltas[hi], 1))
 
 
-def mannwhitney(
-    baseline: list[float],
-    current: list[float],
-) -> dict | None:
-    """Mann-Whitney U test (non-parametric).
-
-    Tests whether two independent samples come from the same distribution.
-    No normality assumption. Works with ordinal data.
-
-    Returns {"U": float, "pvalue": float, "significant": bool} or None
-    if samples are too small.
-    """
-    from scipy.stats import mannwhitneyu
-
-    if len(baseline) < 2 or len(current) < 2:
-        return None
-
-    # All identical values → no test needed.
-    if len(set(baseline)) <= 1 and len(set(current)) <= 1:
-        if baseline[0] == current[0]:
-            return {"U": 0.0, "pvalue": 1.0, "significant": False}
-        return {"U": 0.0, "pvalue": 0.0, "significant": True}
-
-    try:
-        stat, pval = mannwhitneyu(baseline, current, alternative="two-sided")
-        return {
-            "U": round(float(stat), 2),
-            "pvalue": round(float(pval), 6),
-            "significant": bool(pval < 0.05),
-        }
-    except ValueError:
-        return None
 
 
 def two_proportion_ztest(
