@@ -361,31 +361,37 @@ def _format_token_usage(obs: Observation, verbose: bool) -> tuple[str, list[str]
 def _format_token_eff(obs: Observation, verbose: bool) -> tuple[str, list[str]]:
     b, c = obs.baseline, obs.current
     if not b:
-        return "n/a — no successes", []
+        return "n/a", []
     headline = (
         f"{b['tokens_per_success']:,.0f} → {c['tokens_per_success']:,.0f}"
-        f" tokens/success  {_delta_str(obs.delta)}"
+        f" tokens/success (median)  {_delta_str(obs.delta)}"
     )
     details = []
     if verbose:
-        details.append(f"{b['successes']} → {c['successes']} successes")
+        details.append(f"{b['successes']} → {c['successes']} successful traces")
+        ci = obs.metadata.get("ci_95")
+        if ci:
+            details.append(f"95% CI [{ci[0]:+.1f}%, {ci[1]:+.1f}%]")
     return headline, details
 
 
 def _format_cost_quality(obs: Observation, verbose: bool) -> tuple[str, list[str]]:
     b, c = obs.baseline, obs.current
     if not b:
-        return "n/a — no successes", []
+        return "n/a", []
     headline = (
         f"${b['cost_per_success']:.4f} → ${c['cost_per_success']:.4f}"
-        f" per success  {_delta_str(obs.delta)}"
+        f" per success (median)  {_delta_str(obs.delta)}"
     )
     details = []
     if verbose:
         details.append(
-            f"{b['successes']}/{b['total_cost']:.2f} → "
-            f"{c['successes']}/{c['total_cost']:.2f} succeeded/total cost"
+            f"{b['successes']} → {c['successes']} successful traces, "
+            f"${b['total_cost']:.2f} → ${c['total_cost']:.2f} total cost"
         )
+        ci = obs.metadata.get("ci_95")
+        if ci:
+            details.append(f"95% CI [{ci[0]:+.1f}%, {ci[1]:+.1f}%]")
     return headline, details
 
 

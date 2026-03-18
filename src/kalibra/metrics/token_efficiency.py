@@ -1,11 +1,11 @@
 """Token efficiency metric — tokens consumed per successful trace.
 
 Computation:
-    Sum total tokens across all traces, count traces with outcome = "success".
-    Compute tokens_per_success = total_tokens / n_successes for each population.
+    For each successful trace, get total_tokens. Compare the per-trace
+    token distributions across baseline and current populations.
 
 Statistical approach:
-    Headline: percentage change in tokens-per-success ratio.
+    Headline: median tokens per successful trace, with bootstrap CI.
     Direction: fewer tokens per success is better (higher_is_better = False).
     Noise threshold: 5% — changes below this are noise.
     Handles no-successes case: returns n/a if either population has zero successes.
@@ -17,7 +17,7 @@ Threshold fields:
 from __future__ import annotations
 
 from kalibra.metrics import ComparisonMetric, Observation
-from kalibra.metrics._stats import pct_delta
+from kalibra.metrics._stats import bootstrap_ci, mean, median, pct_delta
 from kalibra.model import OUTCOME_SUCCESS, Trace
 
 
@@ -35,45 +35,48 @@ class TokenEfficiencyMetric(ComparisonMetric):
         baseline: list[Trace],
         current: list[Trace],
     ) -> Observation:
-        b_succ = sum(1 for t in baseline if t.outcome == OUTCOME_SUCCESS)
-        c_succ = sum(1 for t in current if t.outcome == OUTCOME_SUCCESS)
+        # Per-trace tokens for successful traces only.
+        b_values = [float(t.total_tokens) for t in baseline
+                    if t.outcome == OUTCOME_SUCCESS
+                    and t.total_tokens is not None and t.total_tokens > 0]
+        c_values = [float(t.total_tokens) for t in current
+                    if t.outcome == OUTCOME_SUCCESS
+                    and t.total_tokens is not None and t.total_tokens > 0]
 
-        if b_succ == 0 or c_succ == 0:
-            side = "both populations" if (b_succ == 0 and c_succ == 0) else (
-                "baseline" if b_succ == 0 else "current"
-            )
-            return self._no_data(
-                "no successes",
-                f"No successful traces in {side} — token efficiency is unavailable",
-            )
+        if not b_values and not c_values:
+            # Distinguish "no successes" from "no token data"
+            b_succ = sum(1 for t in baseline if t.outcome == OUTCOME_SUCCESS)
+            c_succ = sum(1 for t in current if t.outcome == OUTCOME_SUCCESS)
+            if b_succ == 0 or c_succ == 0:
+                side = "both populations" if (b_succ == 0 and c_succ == 0) else (
+                    "baseline" if b_succ == 0 else "current"
+                )
+                return self._no_data(
+                    "no successes",
+                    f"No successful traces in {side}",
+                )
+            return self._no_data("no token data", "No token data found")
 
-        b_tokens = sum(t.total_tokens for t in baseline if t.total_tokens is not None)
-        c_tokens = sum(t.total_tokens for t in current if t.total_tokens is not None)
-
-        if b_tokens == 0 and c_tokens == 0:
-            has_any = any(t.total_tokens is not None for t in baseline) or \
-                      any(t.total_tokens is not None for t in current)
-            msg = "All token counts are 0" if has_any else "No token data found"
-            return self._no_data("no token data", msg)
-
-        b_tps = b_tokens / b_succ
-        c_tps = c_tokens / c_succ
-        delta = pct_delta(b_tps, c_tps)
+        b_med = median(b_values)
+        c_med = median(c_values)
+        delta = pct_delta(b_med, c_med)
+        ci = bootstrap_ci(b_values, c_values, stat_fn=median)
 
         return Observation(
             name=self.name,
             description=self.description,
-            direction=self._classify(delta),
+            direction=self._classify(delta, ci),
             delta=delta,
             baseline={
-                "tokens_per_success": b_tps,
-                "total_tokens": b_tokens,
-                "successes": b_succ,
+                "tokens_per_success": b_med,
+                "successes": len(b_values),
             },
             current={
-                "tokens_per_success": c_tps,
-                "total_tokens": c_tokens,
-                "successes": c_succ,
+                "tokens_per_success": c_med,
+                "successes": len(c_values),
+            },
+            metadata={
+                "ci_95": ci,
             },
         )
 
