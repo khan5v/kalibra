@@ -49,7 +49,7 @@ _COLOR = {
 # Which metrics go in which section.
 _TRACE_METRICS = {
     "success_rate", "cost", "steps", "duration",
-    "error_rate", "path_distribution",
+    "error_rate",
     "token_usage", "token_efficiency", "cost_quality",
 }
 _TRACE_BREAKDOWN = {"trace_breakdown"}
@@ -326,14 +326,6 @@ def _format_error_rate(obs: Observation, verbose: bool) -> tuple[str, list[str]]
     return headline, details
 
 
-def _format_path_dist(obs: Observation, verbose: bool) -> tuple[str, list[str]]:
-    j = obs.metadata.get("jaccard", 0)
-    shared = obs.metadata.get("shared_paths", 0)
-    new = (obs.current.get("unique_paths", 0) - shared) if obs.current else 0
-    dropped = (obs.baseline.get("unique_paths", 0) - shared) if obs.baseline else 0
-    headline = f"Jaccard {j:.2f}  (+{new} new, −{dropped} dropped)"
-    return headline, []
-
 
 def _format_token_usage(obs: Observation, verbose: bool) -> tuple[str, list[str]]:
     b, c = obs.baseline, obs.current
@@ -524,7 +516,6 @@ _FORMATTERS = {
     "steps": _format_steps,
     "duration": _format_duration,
     "error_rate": _format_error_rate,
-    "path_distribution": _format_path_dist,
     "token_usage": _format_token_usage,
     "token_efficiency": _format_token_eff,
     "cost_quality": _format_cost_quality,

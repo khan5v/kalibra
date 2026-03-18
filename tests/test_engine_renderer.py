@@ -126,7 +126,7 @@ class TestEngineBasic:
 
         expected = {
             "success_rate", "cost", "duration", "steps",
-            "error_rate", "path_distribution",
+            "error_rate",
             "token_usage", "token_efficiency", "cost_quality",
             "trace_breakdown", "span_breakdown",
         }
@@ -184,7 +184,7 @@ class TestEngineBasic:
     def test_resolve_metrics_empty_list(self):
         """Fix #1: resolve_metrics([]) returns empty, not defaults."""
         assert resolve_metrics([]) == []
-        assert len(resolve_metrics(None)) == 11
+        assert len(resolve_metrics(None)) == 10
 
     def test_rollup_excludes_breakdowns(self):
         """Fix #8: breakdown metrics shouldn't dominate overall direction.
@@ -425,7 +425,6 @@ class TestMarkdownRenderer:
         # Should use shared METRIC_LABEL, not .replace("_", " ").title()
         assert "Cost / quality" in md
         assert "Token efficiency" in md
-        assert "Path distribution" in md
 
 
 class TestJsonRenderer:

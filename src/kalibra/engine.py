@@ -27,7 +27,6 @@ def _register_metrics() -> dict[str, type[ComparisonMetric]]:
     from kalibra.metrics.cost_quality import CostQualityMetric
     from kalibra.metrics.duration import DurationMetric
     from kalibra.metrics.error_rate import ErrorRateMetric
-    from kalibra.metrics.path_distribution import PathDistributionMetric
     from kalibra.metrics.span_breakdown import SpanBreakdownMetric
     from kalibra.metrics.steps import StepsMetric
     from kalibra.metrics.success_rate import SuccessRateMetric
@@ -37,7 +36,7 @@ def _register_metrics() -> dict[str, type[ComparisonMetric]]:
 
     for cls in [
         SuccessRateMetric, CostMetric, DurationMetric, StepsMetric,
-        ErrorRateMetric, PathDistributionMetric,
+        ErrorRateMetric,
         TokenUsageMetric, TokenEfficiencyMetric, CostQualityMetric,
         TraceBreakdownMetric, SpanBreakdownMetric,
     ]:
@@ -47,7 +46,7 @@ def _register_metrics() -> dict[str, type[ComparisonMetric]]:
 
 DEFAULT_METRIC_NAMES = [
     "success_rate", "cost", "duration", "steps",
-    "error_rate", "path_distribution",
+    "error_rate",
     "token_usage", "token_efficiency", "cost_quality",
     "trace_breakdown", "span_breakdown",
 ]

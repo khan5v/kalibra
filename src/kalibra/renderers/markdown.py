@@ -33,7 +33,7 @@ _LABEL = {
 
 _TRACE_METRICS = {
     "success_rate", "cost", "steps", "duration",
-    "error_rate", "path_distribution",
+    "error_rate",
     "token_usage", "token_efficiency", "cost_quality",
 }
 
@@ -216,9 +216,6 @@ def _format_detail(obs: Observation) -> str:
         return f"{b.get('median', 0):,.0f} → {c.get('median', 0):,.0f} tokens"
     if obs.name == "error_rate":
         return f"{b.get('rate', 0):.1f}% → {c.get('rate', 0):.1f}%"
-    if obs.name == "path_distribution":
-        j = obs.metadata.get("jaccard", 0)
-        return f"Jaccard {j:.2f}"
     if obs.name == "token_efficiency":
         return (
             f"{b.get('tokens_per_success', 0):,.0f}"

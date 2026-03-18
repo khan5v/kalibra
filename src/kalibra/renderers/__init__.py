@@ -18,7 +18,6 @@ METRIC_LABEL: dict[str, str] = {
     "steps": "Steps",
     "duration": "Duration",
     "error_rate": "Error rate",
-    "path_distribution": "Path distribution",
     "token_usage": "Token usage",
     "token_efficiency": "Token efficiency",
     "cost_quality": "Cost / quality",

@@ -36,7 +36,6 @@ kalibra demo
   ▼ Duration          7.6s → 15.2s median  +99.1%
   ≈ Steps             4 → 4 steps/trace (median)  +0.0%
   ▼ Error rate        0.2% → 4.3%  +4.1 pp
-  ≈ Path distribution Jaccard 1.00  (+0 new, −0 dropped)
   ≈ Token usage       7,746 → 7,738 tokens/trace (median)  -0.1%
   ▲ Cost / quality    $0.0385 → $0.0189 per success (median)  -51.0%
 
@@ -58,7 +57,7 @@ Add `-v` for per-task outcome changes, per-span breakdowns, confidence intervals
 
 Aggregate metrics hide task-level regressions. Your success rate went from 80% to 82% — great. Except five tasks that used to pass now fail, masked by eight new easy ones that pass. Kalibra catches this.
 
-- **11 metrics** — success rate, cost, duration, steps, error rate, tokens, token efficiency, cost/quality, path distribution, per-task breakdown, per-span breakdown
+- **10 metrics** — success rate, cost, duration, steps, error rate, tokens, token efficiency, cost/quality, per-task breakdown, per-span breakdown
 - **Statistical rigor** — bootstrap 95% CIs on continuous metrics, two-proportion z-test on rates, noise thresholds to ignore jitter
 - **Quality gates** — `require: success_rate_delta >= -5` fails your CI pipeline (exit 1) when thresholds are violated
 - **Any JSONL** — flat traces, nested spans, non-standard field names. Use `--suggest` to auto-detect field mappings

@@ -64,7 +64,6 @@ def _generate_config(baseline_path: str, current_path: str) -> str:
         "  - steps               # steps per task — median and avg",
         "  - duration            # latency — median, avg, P95",
         "  - error_rate          # fraction of spans that error",
-        "  - path_distribution   # execution path similarity",
         "  - token_usage         # token consumption — in/out/total",
         "  - token_efficiency    # tokens per successful task",
         "  - cost_quality        # cost per success",
