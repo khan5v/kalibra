@@ -36,7 +36,7 @@ _TOP_K = 20
 class PathDistributionMetric(ComparisonMetric):
     name = "path_distribution"
     description = "Execution path similarity (Jaccard index of top paths)"
-    noise_threshold = 0.0
+    noise_threshold = 0.0  # any change in path structure is worth reporting
     higher_is_better = True
     _fields = {
         "path_jaccard": "Jaccard similarity of top execution paths (0-1)",

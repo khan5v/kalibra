@@ -33,13 +33,16 @@ from kalibra.metrics._stats import (
 )
 from kalibra.model import Trace
 
+# P95 needs more data than median — at n=30 you're estimating from the
+# 2nd-largest value. At n=100 you have ~5 values in the tail. Some
+# practitioners use 200-500; 100 is a reasonable lower bound for a warning.
 _MIN_P95_N = 100
 
 
 class DurationMetric(ComparisonMetric):
     name = "duration"
     description = "Trace duration — median, average, and P95"
-    noise_threshold = 5.0
+    noise_threshold = 5.0  # % — looser for duration which has high natural variance
     higher_is_better = False
     _fields = {
         "duration_delta_pct": "Median duration change (%)",

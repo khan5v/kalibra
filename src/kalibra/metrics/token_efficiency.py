@@ -24,7 +24,7 @@ from kalibra.model import OUTCOME_SUCCESS, Trace
 class TokenEfficiencyMetric(ComparisonMetric):
     name = "token_efficiency"
     description = "Tokens per successful trace"
-    noise_threshold = 5.0
+    noise_threshold = 5.0  # % — looser for derived metrics with higher natural variance
     higher_is_better = False
     _fields = {
         "token_efficiency_delta_pct": "Change in tokens per success (%)",

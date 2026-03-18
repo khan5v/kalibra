@@ -33,7 +33,7 @@ from kalibra.model import Trace
 class StepsMetric(ComparisonMetric):
     name = "steps"
     description = "Steps per trace — median and average span count"
-    noise_threshold = 3.0
+    noise_threshold = 3.0  # % — ignores minor fluctuations in primary metrics
     higher_is_better = False
     _fields = {
         "steps_delta_pct": "Median steps change (%)",

@@ -21,14 +21,15 @@ from kalibra.metrics import ComparisonMetric, Direction, Observation
 from kalibra.metrics._stats import two_proportion_ztest
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS, Trace
 
-# Below this count, success rate is unreliable.
+# CLT heuristic: n≥30 ensures the normal approximation in the z-test
+# is adequate when n*p and n*(1-p) are both ≥5 (holds for rates 17-83%).
 _MIN_N = 30
 
 
 class SuccessRateMetric(ComparisonMetric):
     name = "success_rate"
     description = "Task success rate delta with statistical significance"
-    noise_threshold = 0.5
+    noise_threshold = 0.5  # pp — sensitive for binary rates, configurable via config
     higher_is_better = True
     _fields = {
         "success_rate_delta": "Change in success rate (percentage points)",

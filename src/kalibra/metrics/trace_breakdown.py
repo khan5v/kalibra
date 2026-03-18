@@ -25,7 +25,7 @@ from kalibra.model import OUTCOME_SUCCESS, Trace
 class TraceBreakdownMetric(ComparisonMetric):
     name = "trace_breakdown"
     description = "Per-task regression and improvement detection"
-    noise_threshold = 0.0
+    noise_threshold = 0.0  # per-task regressions are always significant
     higher_is_better = True
     _fields = {
         "regressions": "Number of tasks that regressed",

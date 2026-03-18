@@ -27,13 +27,16 @@ from kalibra.metrics import ComparisonMetric, Direction, Observation
 from kalibra.metrics._stats import median, pct_delta
 from kalibra.model import Span, Trace
 
+# CLT heuristic: below 30 occurrences, per-span medians and delta
+# percentages are too volatile to trust. Spans below this threshold
+# are excluded from regression/improvement gate tallies.
 _MIN_SPAN_COUNT = 30
 
 
 class SpanBreakdownMetric(ComparisonMetric):
     name = "span_breakdown"
     description = "Per-span-name regression and improvement detection"
-    noise_threshold = 5.0
+    noise_threshold = 5.0  # % — looser for per-span comparisons with smaller samples
     higher_is_better = True
     _fields = {
         "span_regressions": "Number of span names that regressed",

@@ -35,7 +35,7 @@ from kalibra.model import Trace
 class CostMetric(ComparisonMetric):
     name = "cost"
     description = "Cost per trace — median, average, and total"
-    noise_threshold = 3.0
+    noise_threshold = 3.0  # % — ignores minor fluctuations in primary metrics
     higher_is_better = False
     _fields = {
         "cost_delta_pct": "Median cost change (%)",

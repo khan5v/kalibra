@@ -24,7 +24,7 @@ from kalibra.model import Trace
 class ErrorRateMetric(ComparisonMetric):
     name = "error_rate"
     description = "Per-trace error span rate"
-    noise_threshold = 0.5
+    noise_threshold = 0.5  # pp — sensitive for binary rates, configurable via config
     higher_is_better = False
     _fields = {
         "error_rate_delta": "Error rate change (percentage points)",

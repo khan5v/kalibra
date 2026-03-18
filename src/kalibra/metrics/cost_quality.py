@@ -25,7 +25,7 @@ from kalibra.model import OUTCOME_SUCCESS, Trace
 class CostQualityMetric(ComparisonMetric):
     name = "cost_quality"
     description = "Cost per successful trace"
-    noise_threshold = 5.0
+    noise_threshold = 5.0  # % — looser for derived metrics with higher natural variance
     higher_is_better = False
     _fields = {
         "cost_quality_delta_pct": "Change in cost per success (%)",

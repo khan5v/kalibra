@@ -59,8 +59,8 @@ def bootstrap_ci(
     baseline: list[float],
     current: list[float],
     stat_fn=None,
-    n_resamples: int = 1000,
-    alpha: float = 0.05,
+    n_resamples: int = 1000,  # ±0.5% Monte Carlo error on 95% CI bounds; 10K for publication
+    alpha: float = 0.05,  # 95% confidence — universal default
 ) -> tuple[float, float] | None:
     """Bootstrap confidence interval on the percentage delta between two populations.
 
