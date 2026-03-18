@@ -10,6 +10,29 @@ import click
 from kalibra import display
 
 
+_LOGO = r"""
+      ___           ___           ___                       ___           ___           ___
+     /\__\         /\  \         /\__\          ___        /\  \         /\  \         /\  \
+    /:/  /        /::\  \       /:/  /         /\  \      /::\  \       /::\  \       /::\  \
+   /:/__/        /:/\:\  \     /:/  /          \:\  \    /:/\:\  \     /:/\:\  \     /:/\:\  \
+  /::\__\____   /::\~\:\  \   /:/  /           /::\__\  /::\~\:\__\   /: \~\:\  \   /: \~\:\  \
+ /:/\:::::\__\ /:/\:\ \:\__\ /:/__/         __/:/\/__/ /:/\:\ \:|__| /:/\:\ \:\__\ /:/\:\ \:\__\
+ \/_|:|~~|~    \/__\:\/:/  / \:\  \        /\/:/  /    \:\~\:\/:/  / \/_|::\/:/  / \/__\:\/:/  /
+    |:|  |          \::/  /   \:\  \       \::/__/      \:\ \::/  /     |:|::/  /       \::/  /
+    |:|  |          /:/  /     \:\  \       \:\__\       \:\/:/  /      |:|\/__/        /:/  /
+    |:|  |         /:/  /       \:\__\       \/__/        \::/__/       |:|  |         /:/  /
+     \|__|         \/__/         \/__/                     ~~            \|__|         \/__/
+"""
+
+
+def _print_logo() -> None:
+    """Print the Kalibra ASCII logo in cyan."""
+    click.echo()
+    for line in _LOGO.strip("\n").splitlines():
+        click.echo(f"  {click.style(line, fg='cyan')}")
+    click.echo()
+
+
 def _prompt_continue(message: str = "Press Enter to continue, q to quit") -> bool:
     """Prompt user to continue. Only Enter or q accepted."""
     while True:
@@ -37,8 +60,7 @@ def run_demo() -> None:
     b = display.bar()
 
     # ── Beat 1: Intro ────────────────────────────────────────────────────
-    click.echo()
-    click.echo(f"  {click.style('Kalibra Demo', bold=True)}")
+    _print_logo()
     click.echo(f"  {b}")
     click.echo()
     click.echo(
