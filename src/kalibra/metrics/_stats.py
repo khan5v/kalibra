@@ -88,7 +88,6 @@ def bootstrap_ci(
 
 
 
-
 def two_proportion_ztest(
     n1: int, s1: int, n2: int, s2: int,
 ) -> tuple[float, float]:

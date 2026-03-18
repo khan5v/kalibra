@@ -17,7 +17,6 @@ from typing import ClassVar
 
 from kalibra.model import Trace
 
-
 # ── Direction ─────────────────────────────────────────────────────────────────
 
 class Direction(str, Enum):

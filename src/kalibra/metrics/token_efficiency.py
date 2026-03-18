@@ -17,7 +17,7 @@ Threshold fields:
 from __future__ import annotations
 
 from kalibra.metrics import ComparisonMetric, Observation
-from kalibra.metrics._stats import bootstrap_ci, mean, median, pct_delta
+from kalibra.metrics._stats import bootstrap_ci, median, pct_delta
 from kalibra.model import OUTCOME_SUCCESS, Trace
 
 

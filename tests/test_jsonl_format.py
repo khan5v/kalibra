@@ -8,7 +8,6 @@ import pytest
 
 from kalibra.loader import load_traces
 
-
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _write(tmp_path, lines: list[dict], filename: str = "traces.jsonl") -> str:

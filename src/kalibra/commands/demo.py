@@ -9,7 +9,6 @@ import click
 
 from kalibra import display
 
-
 _LOGO = r"""
       ___           ___           ___                       ___           ___           ___
      /\__\         /\  \         /\__\          ___        /\  \         /\  \         /\  \
@@ -84,7 +83,7 @@ def run_demo() -> None:
     if not (src_dir / "baseline.jsonl").exists():
         display.header("Kalibra", "demo data missing")
         click.echo(
-            f"  Built-in sample data not found. Try reinstalling:"
+            "  Built-in sample data not found. Try reinstalling:"
         )
         click.echo(
             f"  {click.style('pip install --force-reinstall kalibra', fg='cyan')}"
@@ -172,24 +171,24 @@ def run_demo() -> None:
     click.echo(f"  {click.style('Getting started with your data', bold=True)}")
     click.echo()
     click.echo(
-        f"  Kalibra reads JSONL — one JSON object per line, one trace per line."
+        "  Kalibra reads JSONL — one JSON object per line, one trace per line."
     )
     click.echo(
         f"  {click.style('See kalibra-demo/*.jsonl for the exact format.', dim=True)}"
     )
     click.echo()
     click.echo(
-        f"  If your traces are in a platform (Langfuse, Braintrust, LangSmith)"
+        "  If your traces are in a platform (Langfuse, Braintrust, LangSmith)"
     )
     click.echo(
-        f"  or a different format, export them to JSONL first."
+        "  or a different format, export them to JSONL first."
     )
     click.echo(
         f"  {click.style('See kalibra-demo/fetch_huggingface.py as a starting point.', dim=True)}"
     )
     click.echo()
     click.echo(
-        f"  If your JSONL uses different field names, Kalibra can help:"
+        "  If your JSONL uses different field names, Kalibra can help:"
     )
     click.echo(
         f"    {click.style('kalibra inspect mydata.jsonl --suggest', fg='cyan')}"
@@ -220,9 +219,8 @@ def run_demo() -> None:
     )
     click.echo()
     click.echo(f"  {click.style('Add quality gates', fg='cyan', bold=True)}")
-    click.echo(
-        f"    kalibra compare ... --require {click.style('\"success_rate_delta >= -5\"', fg='cyan')}"
-    )
+    gate_str = click.style('"success_rate_delta >= -5"', fg='cyan')
+    click.echo(f"    kalibra compare ... --require {gate_str}")
     click.echo(
         f"    kalibra compare --metrics"
         f"                  {click.style('# see all available gate fields', dim=True)}"

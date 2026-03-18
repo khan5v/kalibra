@@ -55,7 +55,6 @@ class StepsMetric(ComparisonMetric):
                 "No span data found",
             )
 
-
         b_med = median(b_steps)
         c_med = median(c_steps)
         delta = pct_delta(b_med, c_med)
