@@ -183,24 +183,21 @@ def _flatten_otel_span(
     attrs = span.get("span_attributes") or {}
 
     # Extract tokens from OpenInference or OTel GenAI attribute names.
-    input_tokens = int(
+    raw_in = (
         attrs.get("llm.token_count.prompt")
         or attrs.get("gen_ai.usage.input_tokens")
-        or 0
     )
-    output_tokens = int(
+    raw_out = (
         attrs.get("llm.token_count.completion")
         or attrs.get("gen_ai.usage.output_tokens")
-        or 0
     )
     model = (
         attrs.get("llm.model_name")
         or attrs.get("gen_ai.request.model")
     )
-    cost = float(
+    raw_cost = (
         attrs.get("llm.cost.total")
         or attrs.get("kalibra.cost")
-        or 0.0
     )
 
     start_ns, end_ns = _parse_otel_timing(span)
@@ -212,9 +209,9 @@ def _flatten_otel_span(
         parent_id=parent_id,
         start_ns=start_ns,
         end_ns=end_ns,
-        cost=cost,
-        input_tokens=input_tokens,
-        output_tokens=output_tokens,
+        cost=float(raw_cost) if raw_cost is not None else None,
+        input_tokens=int(raw_in) if raw_in is not None else None,
+        output_tokens=int(raw_out) if raw_out is not None else None,
         model=model,
         error=is_error,
         attributes={k: v for k, v in attrs.items() if v is not None},
@@ -324,15 +321,18 @@ _TRACE_KNOWN_FIELDS = {
 def _dict_to_span(d: dict) -> Span:
     """Convert a span dict to a Span object."""
     start_ns, end_ns = _parse_timing(d)
+    raw_cost = d.get("cost")
+    raw_in = d.get("input_tokens")
+    raw_out = d.get("output_tokens")
     return Span(
         span_id=d.get("span_id", ""),
         name=d.get("name", ""),
         parent_id=d.get("parent_id"),
         start_ns=start_ns,
         end_ns=end_ns,
-        cost=float(d.get("cost", 0.0)),
-        input_tokens=int(d.get("input_tokens", 0)),
-        output_tokens=int(d.get("output_tokens", 0)),
+        cost=float(raw_cost) if raw_cost is not None else None,
+        input_tokens=int(raw_in) if raw_in is not None else None,
+        output_tokens=int(raw_out) if raw_out is not None else None,
         model=d.get("model"),
         error=bool(d.get("error", False)),
         attributes=d.get("attributes") or {},
@@ -525,15 +525,15 @@ def _apply_fields(traces: list[Trace], fields: object) -> None:
                 # Has spans — apply to each span.
                 for span in trace.spans:
                     lookup = span.attributes
-                    if cost_field and span.cost == 0:
+                    if cost_field and span.cost is None:
                         val = _resolve_dot_path(lookup, cost_field)
                         if val is not None:
                             span.cost = float(val)
-                    if input_tokens_field and span.input_tokens == 0:
+                    if input_tokens_field and span.input_tokens is None:
                         val = _resolve_dot_path(lookup, input_tokens_field)
                         if val is not None:
                             span.input_tokens = int(val)
-                    if output_tokens_field and span.output_tokens == 0:
+                    if output_tokens_field and span.output_tokens is None:
                         val = _resolve_dot_path(lookup, output_tokens_field)
                         if val is not None:
                             span.output_tokens = int(val)

@@ -10,7 +10,7 @@ Statistical approach:
     Bootstrap CI for confidence on the median delta.
     Direction: fewer tokens is better (higher_is_better = False).
     Noise threshold: 3% — token changes below this are noise.
-    Handles all-zero case: if all tokens are 0 in both populations, returns n/a.
+    Handles no-data case: returns n/a if either population has no token data.
 
 Threshold fields:
     token_delta_pct: median total token change (%)
@@ -69,10 +69,14 @@ class TokenUsageMetric(ComparisonMetric):
         delta = pct_delta(b_med, c_med)
         ci = bootstrap_ci(b_total, c_total, stat_fn=median)
 
-        b_input = sum(s.input_tokens for t in baseline for s in t.spans)
-        b_output = sum(s.output_tokens for t in baseline for s in t.spans)
-        c_input = sum(s.input_tokens for t in current for s in t.spans)
-        c_output = sum(s.output_tokens for t in current for s in t.spans)
+        b_input = sum(s.input_tokens for t in baseline for s in t.spans
+                      if s.input_tokens is not None)
+        b_output = sum(s.output_tokens for t in baseline for s in t.spans
+                       if s.output_tokens is not None)
+        c_input = sum(s.input_tokens for t in current for s in t.spans
+                      if s.input_tokens is not None)
+        c_output = sum(s.output_tokens for t in current for s in t.spans
+                       if s.output_tokens is not None)
 
         return Observation(
             name=self.name,

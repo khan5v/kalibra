@@ -584,6 +584,76 @@ class TestEdgeCases:
         # Median should be $0.05, not $0.10 (which would happen if zeros were excluded).
         assert obs.current["median"] < 0.10
 
+    def test_zero_success_rate_threshold_field(self):
+        """Bug fix: 0% success rate must produce success_rate=0, not None/crash."""
+        baseline = [
+            Trace(trace_id=f"b-{i}", spans=[_make_span()],
+                  outcome=OUTCOME_SUCCESS)
+            for i in range(20)
+        ]
+        current = [
+            Trace(trace_id=f"c-{i}", spans=[_make_span()],
+                  outcome=OUTCOME_FAILURE)
+            for i in range(20)
+        ]
+
+        result = compare(baseline, current, metrics=["success_rate"])
+        obs = result.observations["success_rate"]
+        from kalibra.metrics.success_rate import SuccessRateMetric
+        fields = SuccessRateMetric().threshold_fields(obs)
+        assert fields["success_rate"] == 0.0
+        assert fields["success_rate_delta"] < 0
+
+    def test_non_llm_spans_dont_corrupt_metrics(self):
+        """Non-LLM spans (no cost/tokens) should be None, not zero.
+
+        A trace with 2 LLM spans ($0.05 each) and 1 tool span (no cost)
+        should have total_cost=$0.10, not $0.10/3 averaged with zeros.
+        """
+        llm_span = Span(
+            span_id="llm", name="llm_call",
+            start_ns=1_000_000_000, end_ns=2_000_000_000,
+            cost=0.05, input_tokens=500, output_tokens=200,
+        )
+        tool_span = Span(
+            span_id="tool", name="file_read",
+            start_ns=2_000_000_000, end_ns=2_500_000_000,
+            # cost, input_tokens, output_tokens are None (non-LLM)
+        )
+        trace = Trace(
+            trace_id="t1", outcome=OUTCOME_SUCCESS,
+            spans=[llm_span, tool_span],
+        )
+
+        assert trace.total_cost == 0.05  # only the LLM span
+        assert trace.total_tokens == 700  # only the LLM span
+        assert tool_span.cost is None
+        assert tool_span.total_tokens is None
+
+    def test_mixed_llm_and_tool_spans_in_compare(self):
+        """Traces with mixed LLM + non-LLM spans should work end-to-end."""
+        def make_mixed_trace(tid, cost):
+            return Trace(
+                trace_id=tid, outcome=OUTCOME_SUCCESS,
+                spans=[
+                    Span(span_id=f"{tid}-llm", name="llm_call",
+                         start_ns=1_000_000_000, end_ns=2_000_000_000,
+                         cost=cost, input_tokens=500, output_tokens=200),
+                    Span(span_id=f"{tid}-tool", name="tool_use",
+                         start_ns=2_000_000_000, end_ns=2_500_000_000),
+                ],
+            )
+
+        baseline = [make_mixed_trace(f"b-{i}", 0.05) for i in range(20)]
+        current = [make_mixed_trace(f"c-{i}", 0.03) for i in range(20)]
+
+        result = compare(baseline, current)
+        cost_obs = result.observations["cost"]
+        # Should see the real cost difference, not corrupted by None spans
+        assert cost_obs.direction != Direction.NA
+        assert cost_obs.baseline["median"] == 0.05
+        assert cost_obs.current["median"] == 0.03
+
     def test_all_renderers_no_crash(self):
         """All three renderers should handle any CompareResult without crashing."""
         random.seed(42)

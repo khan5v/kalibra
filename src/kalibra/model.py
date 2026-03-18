@@ -33,11 +33,11 @@ class Span:
     start_ns: int = 0
     end_ns: int = 0
 
-    # Telemetry — 0.0/0 means the value is zero, not absent.
-    # Absence is expressed by the trace having no spans at all.
-    cost: float = 0.0
-    input_tokens: int = 0
-    output_tokens: int = 0
+    # Telemetry — None means "not measured" (e.g. non-LLM span),
+    # 0 means "measured as zero" (e.g. cached response, free tool call).
+    cost: float | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
     model: str | None = None
     error: bool = False
 
@@ -52,8 +52,10 @@ class Span:
         return 0.0
 
     @property
-    def total_tokens(self) -> int:
-        return self.input_tokens + self.output_tokens
+    def total_tokens(self) -> int | None:
+        if self.input_tokens is None and self.output_tokens is None:
+            return None
+        return (self.input_tokens or 0) + (self.output_tokens or 0)
 
 
 # ── Trace ─────────────────────────────────────────────────────────────────────
@@ -100,17 +102,22 @@ class Trace:
 
     @property
     def total_cost(self) -> float | None:
-        """Sum of all span costs. None if no spans and no trace-level cost."""
+        """Sum of all span costs. None if no span has cost and no trace-level cost."""
         if self.spans:
-            total = sum(s.cost for s in self.spans)
-            return total if total > 0 or any(s.cost > 0 for s in self.spans) else 0.0
+            costs = [s.cost for s in self.spans if s.cost is not None]
+            if not costs:
+                return None
+            return sum(costs)
         return self._cost
 
     @property
     def total_tokens(self) -> int | None:
-        """Sum of all span tokens. None if no spans and no trace-level tokens."""
+        """Sum of all span tokens. None if no span has tokens and no trace-level tokens."""
         if self.spans:
-            return sum(s.total_tokens for s in self.spans)
+            tokens = [s.total_tokens for s in self.spans if s.total_tokens is not None]
+            if not tokens:
+                return None
+            return sum(tokens)
         if self._input_tokens is not None or self._output_tokens is not None:
             return (self._input_tokens or 0) + (self._output_tokens or 0)
         return None

@@ -107,5 +107,5 @@ class SuccessRateMetric(ComparisonMetric):
             return {}
         return {
             "success_rate_delta": result.delta,
-            "success_rate": (result.current.get("rate") or 0.0) * 100,
+            "success_rate": result.current.get("rate", 0.0) * 100,
         }

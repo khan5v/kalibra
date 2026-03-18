@@ -191,9 +191,9 @@ def _group_spans(traces: list[Trace]) -> dict[str, list[Span]]:
 
 def _span_stats(spans: list[Span]) -> dict:
     """Compute median stats for a list of spans with the same name."""
-    durations = [s.duration_s for s in spans]
-    costs = [s.cost for s in spans]
-    tokens = [float(s.total_tokens) for s in spans]
+    durations = [s.duration_s for s in spans if s.duration_s > 0]
+    costs = [s.cost for s in spans if s.cost is not None]
+    tokens = [float(s.total_tokens) for s in spans if s.total_tokens is not None]
     errors = sum(1 for s in spans if s.error)
     total = len(spans)
     return {

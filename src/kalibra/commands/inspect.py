@@ -212,9 +212,11 @@ def run_inspect(
         click.echo()
 
         # Standard span fields — show what's populated.
-        has_span_cost = sum(1 for t in traces for s in t.spans if s.cost > 0)
+        has_span_cost = sum(1 for t in traces for s in t.spans
+                            if s.cost is not None and s.cost > 0)
         has_span_tokens = sum(
-            1 for t in traces for s in t.spans if s.total_tokens > 0
+            1 for t in traces for s in t.spans
+            if s.total_tokens is not None and s.total_tokens > 0
         )
         has_span_model = sum(
             1 for t in traces for s in t.spans if s.model
