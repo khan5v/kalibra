@@ -33,7 +33,7 @@ def _print_logo() -> None:
     click.echo()
 
 
-def _prompt_continue(message: str = "Press Enter to continue, q to quit") -> bool:
+def _prompt_continue(message: str = "Press Enter to continue, q to quit ") -> bool:
     """Prompt user to continue. Only Enter or q accepted."""
     while True:
         try:
