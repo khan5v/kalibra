@@ -274,9 +274,13 @@ def run_inspect(
         for s in suggestions:
             click.echo(click.style(f"      {s}", dim=True))
         click.echo()
-    else:
+    elif not suggestions:
         click.echo(f"  {b}")
         click.echo(f"  {click.style('All active metrics have data.', fg='green')}")
+        click.echo()
+    else:
+        # --suggest is active and there are missing fields — suggest output handles it
+        click.echo(f"  {b}")
         click.echo()
 
     # ── Suggest field mappings ────────────────────────────────────────────

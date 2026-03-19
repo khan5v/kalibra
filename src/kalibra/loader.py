@@ -107,8 +107,10 @@ def _try_load_json_array(path: Path, trace_id_field: str | None) -> list[Trace] 
     except (json.JSONDecodeError, UnicodeDecodeError):
         return None
 
-    if not isinstance(data, list) or not data:
+    if not isinstance(data, list):
         return None
+    if not data:
+        return []
 
     first_item = data[0]
     if not isinstance(first_item, dict):
@@ -256,7 +258,7 @@ def _extract_otel_metadata(trace_data: dict, root_spans: list[dict]) -> dict:
 
 def _row_to_trace(row: dict, trace_id: str) -> Trace:
     """Convert a parsed JSONL row to a Trace object."""
-    outcome = row.get("outcome")
+    outcome = _classify_outcome(row.get("outcome")) if row.get("outcome") is not None else None
 
     metadata = row.get("metadata") or {}
     if not isinstance(metadata, dict):
@@ -276,7 +278,6 @@ def _row_to_trace(row: dict, trace_id: str) -> Trace:
 
     # No spans — set trace-level fields directly. Spans stays empty.
     start_ns, end_ns = _parse_timing(row)
-    duration_s = (end_ns - start_ns) / 1e9 if (start_ns or end_ns) else 0.0
 
     # Collect extra fields as metadata (for inspect visibility).
     for k, v in row.items():
@@ -342,11 +343,6 @@ def _dict_to_span(d: dict) -> Span:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-_LIKELY_ID_FIELDS = [
-    "uuid", "id", "instance_id", "task_name", "request_id",
-    "trace_id", "traj_id", "run_id", "session_id",
-]
 
 
 def _resolve_trace_id(

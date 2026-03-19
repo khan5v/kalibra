@@ -55,7 +55,7 @@ def _generate_config(baseline_path: str, current_path: str) -> str:
         f"  path: {current_path}",
         "",
         "# ── Metrics ──────────────────────────────────────────────",
-        "# All 11 built-in metrics run by default.",
+        "# All 10 built-in metrics run by default.",
         "# Remove any you don't need.",
         "",
         "metrics:",

@@ -61,7 +61,7 @@ class ComparisonMetric(ABC):
 
     name: ClassVar[str]
     description: ClassVar[str]
-    noise_threshold: ClassVar[float] = 0.5
+    noise_threshold: float = 0.5  # can be overridden per-instance via engine config
     higher_is_better: ClassVar[bool] = True
 
     #: {field_name: description} — for --metrics display and --require validation.

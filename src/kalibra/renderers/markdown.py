@@ -144,7 +144,7 @@ def render_markdown(result: CompareResult, verbose: bool = False) -> str:
             )):
                 entry = changed[name]
                 d = entry.get("direction", "unchanged")
-                d_badge = "▼" if d == "regressed" else "▲"
+                d_badge = {"regressed": "▼", "improved": "▲", "mixed": "⚠"}.get(d, "—")
                 b = entry.get("baseline", {})
                 c = entry.get("current", {})
                 deltas = entry.get("deltas", {})

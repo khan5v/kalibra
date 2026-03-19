@@ -88,17 +88,34 @@ class Trace:
 
     @property
     def duration(self) -> float | None:
-        """Wall-clock duration in seconds. None if not measured."""
+        """Wall-clock duration in seconds. None if not measured.
+
+        Priority:
+        1. Trace-level _duration_s if set — from the dataset, trusted as-is.
+        2. Span timestamps: max(end) - min(start) across spans that have
+           both start_ns and end_ns. This is an approximation — it measures
+           from the first recorded span start to the last recorded span end,
+           which may undercount if the trace did work before/after any span
+           was registered. Still the best available signal when no explicit
+           duration is provided.
+        3. None if neither source has data.
+        """
+        # Prefer explicit trace-level duration from the dataset.
+        if self._duration_s is not None:
+            return self._duration_s
+
+        # Fall back to span timestamps if available.
         if self.spans:
-            times = [
-                (s.start_ns, s.end_ns)
-                for s in self.spans
-                if s.start_ns or s.end_ns
-            ]
-            if times:
-                return (max(e for _, e in times) - min(s for s, _ in times)) / 1e9
-            return None
-        return self._duration_s
+            starts = []
+            ends = []
+            for s in self.spans:
+                if s.start_ns and s.end_ns:
+                    starts.append(s.start_ns)
+                    ends.append(s.end_ns)
+            if starts and ends:
+                return (max(ends) - min(starts)) / 1e9
+
+        return None
 
     @property
     def total_cost(self) -> float | None:

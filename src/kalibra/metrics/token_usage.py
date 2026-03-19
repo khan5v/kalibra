@@ -69,14 +69,23 @@ class TokenUsageMetric(ComparisonMetric):
         delta = pct_delta(b_med, c_med)
         ci = bootstrap_ci(b_total, c_total, stat_fn=median)
 
+        # Input/output breakdown: from spans when available, trace-level for span-less.
         b_input = sum(s.input_tokens for t in baseline for s in t.spans
                       if s.input_tokens is not None)
+        b_input += sum(t._input_tokens for t in baseline
+                       if not t.spans and t._input_tokens is not None)
         b_output = sum(s.output_tokens for t in baseline for s in t.spans
                        if s.output_tokens is not None)
+        b_output += sum(t._output_tokens for t in baseline
+                        if not t.spans and t._output_tokens is not None)
         c_input = sum(s.input_tokens for t in current for s in t.spans
                       if s.input_tokens is not None)
+        c_input += sum(t._input_tokens for t in current
+                       if not t.spans and t._input_tokens is not None)
         c_output = sum(s.output_tokens for t in current for s in t.spans
                        if s.output_tokens is not None)
+        c_output += sum(t._output_tokens for t in current
+                        if not t.spans and t._output_tokens is not None)
 
         return Observation(
             name=self.name,

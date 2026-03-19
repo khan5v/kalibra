@@ -82,8 +82,14 @@ def bootstrap_ci(
     deltas = sorted(d for d in raw if d is not None)
     if not deltas:
         return None
-    lo = max(0, int(n_resamples * alpha / 2))
-    hi = min(len(deltas) - 1, int(n_resamples * (1 - alpha / 2)))
+    # If too many resamples were undefined (>20%), the CI is unreliable —
+    # the surviving sample is biased toward resamples where the baseline
+    # statistic happened to be nonzero.
+    if len(deltas) < n_resamples * 0.8:
+        return None
+    n = len(deltas)
+    lo = max(0, int(n * alpha / 2))
+    hi = min(n - 1, int(n * (1 - alpha / 2)))
     return (round(deltas[lo], 1), round(deltas[hi], 1))
 
 

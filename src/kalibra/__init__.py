@@ -18,7 +18,7 @@ Programmatic API::
     print("passed:", result.passed)
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 from kalibra.config import CompareConfig
 from kalibra.engine import (

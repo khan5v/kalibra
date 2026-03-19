@@ -1,8 +1,7 @@
 """Engine — orchestrates metrics over two trace populations.
 
-This is the v2 replacement for compare.py. It takes lists of Trace objects
-(not TraceCollections), runs selected metrics, evaluates threshold gates,
-and returns a flat CompareResult.
+Takes lists of Trace objects, runs selected metrics, evaluates threshold
+gates, and returns a flat CompareResult.
 """
 
 from __future__ import annotations

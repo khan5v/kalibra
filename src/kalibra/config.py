@@ -172,10 +172,11 @@ class CompareConfig:
 
         if path:
             p = Path(path)
-            if p.exists():
-                with p.open() as f:
-                    data = yaml.safe_load(f) or {}
-                return cls.from_dict(data)
+            if not p.exists():
+                raise FileNotFoundError(f"Config file not found: {path}")
+            with p.open() as f:
+                data = yaml.safe_load(f) or {}
+            return cls.from_dict(data)
 
         # Walk-up discovery.
         discovered = find_config()
