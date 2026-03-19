@@ -3,13 +3,11 @@
   Regression detection and CI quality gates for AI agents.
 </p>
 
-<!-- badges will activate once the package is on PyPI and repo is public
 <p align="center">
   <a href="https://pypi.org/project/kalibra/"><img src="https://img.shields.io/pypi/v/kalibra" alt="PyPI"></a>
   <a href="https://pypi.org/project/kalibra/"><img src="https://img.shields.io/pypi/pyversions/kalibra" alt="Python"></a>
   <a href="https://github.com/khan5v/kalibra/LICENSE"><img src="https://img.shields.io/github/license/khan5v/kalibra" alt="License"></a>
 </p>
--->
 
 ---
 
