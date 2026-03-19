@@ -50,7 +50,7 @@ def render_markdown(result: CompareResult, verbose: bool = False) -> str:
         n_failed = sum(1 for g in result.gates if not g.passed and not g.warning)
         n_total = len(result.gates)
         if n_failed == 0:
-            lines.append(f"## ✅ Kalibra Compare — All quality gates passed")
+            lines.append("## ✅ Kalibra Compare — All quality gates passed")
         else:
             lines.append(
                 f"## ❌ Kalibra Compare — {n_failed}/{n_total}"

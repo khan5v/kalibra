@@ -289,7 +289,7 @@ class TestTerminalRenderer:
         )
         output = render_terminal(result)
 
-        assert "Thresholds" in output
+        assert "Quality gates" in output
 
     def test_render_with_warnings(self):
         random.seed(42)

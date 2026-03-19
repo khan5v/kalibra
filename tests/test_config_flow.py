@@ -239,7 +239,7 @@ class TestInitCompareFlow:
 
             result = runner.invoke(main, ["compare"])
             assert "Kalibra Compare" in result.output
-            assert "Thresholds" in result.output
+            assert "Quality gates" in result.output
 
 
 # ── Fields config ─────────────────────────────────────────────────────────────
