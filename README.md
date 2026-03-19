@@ -113,6 +113,42 @@ require:
 kalibra compare        # reads kalibra.yml, exits 1 on failure
 ```
 
+### GitHub Actions
+
+```yaml
+- uses: khan5v/kalibra-action@v1
+  with:
+    baseline: baselines/production.jsonl
+    current: current.jsonl
+    config: kalibra.yml
+```
+
+Posts a markdown report as a PR comment. Exits 1 on gate failure.
+
+<details>
+<summary>Full workflow example</summary>
+
+```yaml
+name: Agent Quality Gate
+on: [pull_request]
+
+jobs:
+  kalibra:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+      - run: python eval.py --output current.jsonl
+      - uses: khan5v/kalibra-action@v1
+        with:
+          baseline: baselines/production.jsonl
+          current: current.jsonl
+          config: kalibra.yml
+```
+
+</details>
+
 ## Field mapping
 
 Kalibra works with any JSONL shape. Map your fields in config or on the command line:
