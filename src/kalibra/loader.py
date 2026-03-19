@@ -136,8 +136,9 @@ def _try_load_json_array(path: Path, trace_id_field: str | None) -> list[Trace] 
         if not isinstance(item, dict):
             continue
         item = _auto_parse_json_strings(item)
-        trace_id = item.get(id_field) or item.get("trace_id", "")
-        traces.append(_row_to_trace(item, str(trace_id)))
+        tid = item.get(id_field)
+        trace_id = str(item.get("trace_id", "")) if tid is None else str(tid)
+        traces.append(_row_to_trace(item, trace_id))
     return traces
 
 
@@ -184,23 +185,17 @@ def _flatten_otel_span(
     name = span.get("span_name") or span.get("name") or "unknown"
     attrs = span.get("span_attributes") or {}
 
+    def _val(*keys):
+        for k in keys:
+            if attrs.get(k) is not None:
+                return attrs[k]
+        return None
+
     # Extract tokens from OpenInference or OTel GenAI attribute names.
-    raw_in = (
-        attrs.get("llm.token_count.prompt")
-        or attrs.get("gen_ai.usage.input_tokens")
-    )
-    raw_out = (
-        attrs.get("llm.token_count.completion")
-        or attrs.get("gen_ai.usage.output_tokens")
-    )
-    model = (
-        attrs.get("llm.model_name")
-        or attrs.get("gen_ai.request.model")
-    )
-    raw_cost = (
-        attrs.get("llm.cost.total")
-        or attrs.get("kalibra.cost")
-    )
+    raw_in = _val("llm.token_count.prompt", "gen_ai.usage.input_tokens")
+    raw_out = _val("llm.token_count.completion", "gen_ai.usage.output_tokens")
+    model = _val("llm.model_name", "gen_ai.request.model")
+    raw_cost = _val("llm.cost.total", "kalibra.cost")
 
     start_ns, end_ns = _parse_otel_timing(span)
     is_error = str(span.get("status_code", "")).lower() == "error"
@@ -387,6 +382,10 @@ def _parse_ts_to_ns(val) -> int:
     if isinstance(val, (int, float)):
         if val < 1e12:
             return int(val * 1e9)
+        if val < 1e15:
+            return int(val * 1e6)
+        if val < 1e18:
+            return int(val * 1e3)
         return int(val)
     if isinstance(val, str):
         return _iso_to_ns(val)

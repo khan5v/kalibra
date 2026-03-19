@@ -132,7 +132,7 @@ class TraceBreakdownMetric(ComparisonMetric):
 def _extract_task_id(trace: Trace, task_id_field: str | None) -> str:
     if task_id_field:
         val = trace.metadata.get(task_id_field)
-        if val:
+        if val is not None:
             return str(val)
     # Fallback: strip __model__index suffix
     parts = trace.trace_id.split("__")
