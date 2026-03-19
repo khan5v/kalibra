@@ -9,7 +9,6 @@ build/
 .env
 .ruff_cache/
 .pytest_cache/
-*.html
 context/
 docs-internal/
 landing/

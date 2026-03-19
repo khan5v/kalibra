@@ -1,0 +1,120 @@
+{% extends "main.html" %}
+
+{% block tabs %}
+{{ super() }}
+
+<section class="kali-hero">
+  <h1>You changed the prompt.<br>Did it <span class="accent">actually</span> get better?</h1>
+  <p class="sub">
+    Catches the regressions that aggregate metrics hide.
+  </p>
+  <div class="ctas">
+    <a class="cta-p" href="getting-started/">Get Started</a>
+    <a class="cta-s" href="https://github.com/khan5v/kalibra">GitHub</a>
+  </div>
+
+  <div class="kali-term">
+    <div class="kali-term-bar">
+      <div class="kali-dot r"></div>
+      <div class="kali-dot y"></div>
+      <div class="kali-dot g"></div>
+      <span class="term-title">Terminal</span>
+    </div>
+    <div class="kali-term-body"><span class="t-h">Kalibra Compare</span>
+<span class="t-d">──────────────────────────────────────────────────────────</span>
+<span class="t-w">Baseline</span>       <span class="t-w">100 traces</span>   <span class="t-w">(baseline.jsonl)</span>
+<span class="t-w">Current</span>        <span class="t-w">100 traces</span>   <span class="t-w">(current.jsonl)</span>
+<span class="t-w">Gates</span>         <span class="t-r">✗ 1/2 failed</span>
+
+<span class="t-g">▲</span> <span class="t-w">Success rate</span>      50.0% → 75.0%  <span class="t-g">+25.0 pp</span>
+<span class="t-g">▲</span> <span class="t-w">Cost</span>              $0.036 → $0.021 median  <span class="t-g">-40.5%</span>
+<span class="t-r">▼</span> <span class="t-w">Duration</span>          7.6s → 15.2s median  <span class="t-r">+99.1%</span>
+<span class="t-r">▼</span> <span class="t-w">Error rate</span>        0.2% → 4.3%  <span class="t-r">+4.1 pp</span>
+
+<span class="t-w">Trace breakdown</span>
+<span class="t-c">~</span> <span class="t-w">Per trace</span>         20 matched — <span class="t-g">✓ 10 improved</span>, <span class="t-r">✗ 5 regressed</span>
+
+<span class="t-w">Quality gates</span>
+  [<span class="t-g"> OK </span>] success_rate_delta >= -5
+  [<span class="t-r">FAIL</span>] duration_delta_pct <= 30
+
+<span class="t-d">──────────────────────────────────────────────────────────</span>
+<span class="t-r">FAILED — quality gate violation (exit code 1)</span></div>
+  </div>
+</section>
+
+<!-- ── THE STORY: what just happened ── -->
+<section class="kali-insights">
+  <div class="insight-card">
+    <div class="insight-num"><span class="t-g">+25pp</span></div>
+    <div class="insight-body">
+      <h3>The aggregate looks great</h3>
+      <p>Success rate up, cost down. Every dashboard would green-light this deploy.</p>
+    </div>
+  </div>
+  <div class="insight-card">
+    <div class="insight-num"><span class="t-r">5/5 → 0/5</span></div>
+    <div class="insight-body">
+      <h3>Five tasks completely broke</h3>
+      <p>Per-task breakdown reveals them. New easy tasks masked the damage in the average.</p>
+    </div>
+  </div>
+  <div class="insight-card">
+    <div class="insight-num"><span class="t-r">+99%</span></div>
+    <div class="insight-body">
+      <h3>Duration doubled</h3>
+      <p>The quality gate caught it. Exit code 1. Deploy blocked.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── KEY CAPABILITIES — weighted, not flat ── -->
+<section class="kali-capabilities">
+  <div class="cap-primary">
+    <div class="cap-card cap-big">
+      <h3>Per-task regression detection</h3>
+      <p>Groups traces by task ID and compares success rates. Finds the 5 tasks that broke even when the aggregate improved. The thing dashboards don't show you.</p>
+    </div>
+    <div class="cap-card cap-big">
+      <h3>Statistical significance, not just deltas</h3>
+      <p>Bootstrap confidence intervals and z-tests on every metric. Separates real changes from random variance.</p>
+    </div>
+  </div>
+  <div class="cap-secondary">
+    <div class="cap-card">
+      <h3>Quality gates</h3>
+      <p>Exit 1 on violation. Markdown PR comments. <a href="https://github.com/khan5v/kalibra-action">GitHub Action</a> included.</p>
+    </div>
+    <div class="cap-card">
+      <h3>Any JSONL</h3>
+      <p>Flat or nested. <code>--suggest</code> scans field names and gives you a config.</p>
+    </div>
+    <div class="cap-card">
+      <h3>Deterministic</h3>
+      <p>Same data, same results. No LLM-as-judge.</p>
+    </div>
+    <div class="cap-card">
+      <h3>Lightweight</h3>
+      <p>2 deps. No API keys. Installs in seconds.</p>
+    </div>
+  </div>
+</section>
+
+<section class="kali-install">
+  <div class="install-chip">
+    <span class="install-prompt">$</span> pip install kalibra
+  </div>
+</section>
+
+<div class="kali-footer-links">
+  <a href="https://github.com/khan5v/kalibra">GitHub</a>
+  <span class="sep">·</span>
+  <a href="https://pypi.org/project/kalibra/">PyPI</a>
+  <span class="sep">·</span>
+  <a href="https://www.linkedin.com/in/orekhov/">LinkedIn</a>
+  <span class="sep">·</span>
+  <a href="https://orekhov.work">orekhov.work</a>
+</div>
+{% endblock %}
+
+{% block content %}{% endblock %}
