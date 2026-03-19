@@ -54,7 +54,7 @@ Add `-v` for per-task outcome changes, per-span breakdowns, and confidence inter
 
 ## Why Kalibra
 
-Aggregate metrics hide task-level regressions. Your success rate went from 80% to 82% — great. Except five tasks that used to pass now fail, masked by eight new easy ones that pass. Kalibra catches this.
+Aggregate metrics hide task-level regressions. Your success rate went up — but the agent got better at simple high-volume tasks while silently breaking on a critical subset. The cost dropped because broken tasks stopped making expensive tool calls. Every number improved. The agent got worse. Kalibra catches this.
 
 - **10 metrics** — success rate, cost, duration, steps, error rate, tokens, token efficiency, cost/quality, per-task breakdown, per-span breakdown
 - **Statistical rigor** — bootstrap 95% CIs on continuous metrics, two-proportion z-test on rates, noise thresholds to ignore jitter
