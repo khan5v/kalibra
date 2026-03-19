@@ -144,7 +144,8 @@ def run_demo() -> None:
         f"5 tasks regressed 5/5 → 0/5 despite overall success rate improving."
     )
     click.echo(
-        f"    {click.style('Aggregates masked a targeted regression. trace_breakdown caught it.', dim=True)}"
+        f"    {click.style('Aggregates masked a targeted regression.', dim=True)}"
+        f" {click.style('trace_breakdown caught it.', dim=True)}"
     )
     click.echo()
 
@@ -153,7 +154,8 @@ def run_demo() -> None:
         f"Cost dropped 40% but duration doubled."
     )
     click.echo(
-        f"    {click.style('A model swap improved cost but introduced latency. Both matter.', dim=True)}"
+        f"    {click.style('A model swap improved cost but introduced latency.', dim=True)}"
+        f" {click.style('Both matter.', dim=True)}"
     )
     click.echo()
 
@@ -162,7 +164,8 @@ def run_demo() -> None:
         f"'search' span errors spiked while aggregate error rate barely moved."
     )
     click.echo(
-        f"    {click.style('Per-span breakdown reveals problems that per-trace metrics hide.', dim=True)}"
+        f"    {click.style('Per-span breakdown reveals problems', dim=True)}"
+        f" {click.style('that per-trace metrics hide.', dim=True)}"
     )
 
     # ── Getting started ──────────────────────────────────────────────────

@@ -37,6 +37,7 @@ kalibra demo
   ≈ Steps             4 → 4 steps/trace (median)  +0.0%
   ▼ Error rate        0.2% → 4.3%  +4.1 pp
   ≈ Token usage       7,746 → 7,738 tokens/trace (median)  -0.1%
+  ≈ Token efficiency  8,443 → 7,090 tokens/success (median)  -16.0%
   ▲ Cost / quality    $0.0385 → $0.0189 per success (median)  -51.0%
 
   Trace breakdown
@@ -62,7 +63,7 @@ Aggregate metrics hide task-level regressions. Your success rate went from 80% t
 - **Quality gates** — `require: success_rate_delta >= -5` fails your CI pipeline (exit 1) when thresholds are violated
 - **Any JSONL** — flat traces, nested spans, non-standard field names. Use `--suggest` to auto-detect field mappings
 - **Three output formats** — terminal (human), markdown (PR comments), JSON (automation)
-- **Two dependencies** — click + pyyaml. No scipy, no ML frameworks, no API keys
+- **Two dependencies** — click + pyyaml. No ML frameworks, no API keys
 
 ## Quickstart
 

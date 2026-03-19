@@ -318,9 +318,8 @@ def _format_error_rate(obs: Observation, verbose: bool) -> tuple[str, list[str]]
         p = obs.metadata.get("pvalue")
         if p is not None:
             sig = obs.metadata.get("significant", False)
-            details.append(
-                f"p={p:.3f} — {'statistically significant' if sig else 'not statistically significant'}"
-            )
+            label = 'statistically significant' if sig else 'not statistically significant'
+            details.append(f"p={p:.3f} — {label}")
     return headline, details
 
 

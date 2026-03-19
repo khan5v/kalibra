@@ -8,7 +8,8 @@ Requirements:  pip install datasets
 
 Examples:
     python kalibra-demo/fetch_huggingface.py Intelligent-Internet/ii-agent_gaia-benchmark_validation
-    python kalibra-demo/fetch_huggingface.py AlexCuadron/SWE-Bench-Verified-O1-reasoning-high-results --split test
+    python kalibra-demo/fetch_huggingface.py \\
+        AlexCuadron/SWE-Bench-Verified-O1-reasoning-high-results --split test
 
 Then:
     kalibra inspect kalibra-demo/dataset.jsonl --suggest

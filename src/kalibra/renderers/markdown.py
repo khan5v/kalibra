@@ -129,7 +129,8 @@ def render_markdown(result: CompareResult, verbose: bool = False) -> str:
             parts.append(f"**{n_imp}** improved")
         if n_mix:
             parts.append(f"**{n_mix}** mixed")
-        lines.append(f"{n_matched} matched — {', '.join(parts)}" if parts else f"{n_matched} matched")
+        summary = f"{n_matched} matched — {', '.join(parts)}" if parts else f"{n_matched} matched"
+        lines.append(summary)
         lines.append("")
         per_span = sb.metadata.get("per_span", {})
         changed = {

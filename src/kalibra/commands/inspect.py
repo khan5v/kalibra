@@ -407,7 +407,8 @@ def _print_suggestions(
 
     has_any = any(c for c in all_candidates.values())
     if not has_any:
-        click.echo(f"  {click.style('No field mapping suggestions — standard field names detected.', dim=True)}")
+        msg = 'No field mapping suggestions — standard field names detected.'
+        click.echo(f"  {click.style(msg, dim=True)}")
         click.echo()
         return
 
@@ -458,7 +459,8 @@ def _print_suggestions(
             click.echo(f"      {flag}{suffix}")
     click.echo()
 
-    click.echo(f"  {click.style('Option 2 — save to config (reusable, supports CI gates):', bold=True)}")
+    opt2 = 'Option 2 — save to config (reusable, supports CI gates):'
+    click.echo(f"  {click.style(opt2, bold=True)}")
     click.echo()
     click.echo(click.style("    # kalibra init to create kalibra.yml, then add:", dim=True))
     click.echo(click.style("    fields:", dim=True))
@@ -472,7 +474,8 @@ def _print_suggestions(
         f"  {click.style('Replace <current.jsonl> with your second file.', dim=True)}"
     )
     click.echo(
-        f"  {click.style('Same format assumed for both files. If they differ, use config', dim=True)}"
+        f"  {click.style('Same format assumed for both files.', dim=True)}"
+        f" {click.style('If they differ, use config', dim=True)}"
     )
     click.echo(
         f"  {click.style('with per-source field overrides — see README.', dim=True)}"
