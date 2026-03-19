@@ -11,7 +11,7 @@ build/
 .pytest_cache/
 *.html
 context/
-docs/
+docs-internal/
 landing/
 cached_sources/*
 data/

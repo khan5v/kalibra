@@ -1,0 +1,251 @@
+/* Vision E — Light Mode, restructured */
+
+:root {
+  --md-primary-fg-color: #111;
+  --md-primary-bg-color: #fafaf9;
+  --md-accent-fg-color: #16a34a;
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: #fafaf9;
+  --md-default-fg-color: #1a1a1a;
+  --md-default-fg-color--light: #6b7280;
+  --md-code-bg-color: #f3f4f6;
+  --md-typeset-a-color: #16a34a;
+}
+
+.md-header { background: #fff; color: #111; box-shadow: 0 1px 0 rgba(0,0,0,0.06); }
+.md-header .md-header__title { color: #111; }
+.md-header .md-icon { color: #666; }
+.md-tabs { background: #fff; border-bottom: 1px solid #e5e7eb; }
+.md-main__inner { margin-top: 0; }
+
+/* ── HERO ── */
+.kali-hero {
+  padding: 100px 24px 60px;
+  text-align: center;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.kali-hero h1 {
+  font-size: clamp(2.4rem, 5.5vw, 3.8rem);
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  line-height: 1.1;
+  color: #111;
+  margin-bottom: 16px;
+}
+.kali-hero h1 .accent { color: #16a34a; }
+
+.kali-hero .sub {
+  font-size: 1.1rem;
+  color: #6b7280;
+  max-width: 480px;
+  margin: 0 auto 32px;
+  line-height: 1.6;
+}
+
+.kali-hero .ctas { display: flex; gap: 12px; justify-content: center; }
+
+.kali-hero .cta-p,
+.kali-hero .cta-s {
+  min-width: 160px;
+  text-align: center;
+  padding: 13px 26px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.kali-hero .cta-p { background: #16a34a; color: #fff; }
+.kali-hero .cta-p:hover {
+  background: #15803d;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(22,163,74,0.2);
+}
+.kali-hero .cta-s { border: 1px solid #d1d5db; color: #555; }
+.kali-hero .cta-s:hover { border-color: #999; color: #111; }
+
+/* ── TERMINAL ── */
+.kali-term {
+  max-width: 680px;
+  margin: 48px auto 0;
+  text-align: left;
+  background: #111;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow:
+    0 2px 4px rgba(0,0,0,0.04),
+    0 12px 40px rgba(0,0,0,0.1),
+    0 40px 80px rgba(0,0,0,0.06);
+}
+
+.kali-term-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 13px 18px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.kali-dot { width: 12px; height: 12px; border-radius: 50%; }
+.kali-dot.r { background: #ff5f57; } .kali-dot.y { background: #febc2e; } .kali-dot.g { background: #28c840; }
+.kali-term-bar .term-title {
+  margin-left: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.3);
+}
+
+.kali-term-body {
+  padding: 20px 24px 24px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12.5px;
+  line-height: 1.75;
+  color: #c8c8c8;
+  white-space: pre;
+  overflow-x: auto;
+}
+.t-prompt { color: #4ade80; }
+.t-cmd { color: #f1f5f9; font-weight: 500; }
+.t-g { color: #4ade80; } .t-r { color: #fb7185; } .t-c { color: #67e8f9; }
+.t-w { color: #f1f5f9; font-weight: 500; }
+.t-d { color: #6b7280; }
+.t-h { color: #fff; font-weight: 600; }
+
+/* ── INSIGHT CARDS — the story ── */
+.kali-insights {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  max-width: 880px;
+  margin: 56px auto 0;
+  padding: 0 24px;
+  align-items: stretch;
+}
+
+.insight-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+}
+
+.insight-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin-bottom: 14px;
+  white-space: nowrap;
+}
+
+.insight-body h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #111;
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+
+.insight-body p {
+  font-size: 0.82rem;
+  color: #6b7280;
+  line-height: 1.6;
+}
+
+/* Colors for insight nums on light bg */
+.insight-num .t-g { color: #16a34a; }
+.insight-num .t-r { color: #dc2626; }
+
+/* ── CAPABILITIES — weighted layout ── */
+.kali-capabilities {
+  max-width: 880px;
+  margin: 56px auto 0;
+  padding: 0 24px;
+}
+
+.cap-primary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.cap-secondary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.cap-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  transition: all 0.2s;
+}
+.cap-card:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+}
+
+.cap-card.cap-big { padding: 28px; }
+
+.cap-card h3 { font-size: 0.88rem; font-weight: 600; color: #111; margin-bottom: 6px; }
+.cap-card p { font-size: 0.78rem; color: #6b7280; line-height: 1.55; }
+.cap-card a { color: #16a34a; font-weight: 600; text-decoration: none; }
+.cap-card a:hover { text-decoration: underline; }
+
+.cap-big h3 { font-size: 0.95rem; }
+.cap-big p { font-size: 0.82rem; }
+
+/* ── INSTALL CHIP ── */
+.kali-install {
+  text-align: center;
+  padding: 32px 24px 64px;
+}
+
+.install-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #fff;
+  background: #111;
+  padding: 18px 36px;
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.08);
+  transition: all 0.2s;
+  cursor: default;
+}
+.install-chip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.06), 0 16px 40px rgba(0,0,0,0.12);
+}
+.install-chip .install-prompt { color: #4ade80; font-weight: 600; }
+
+/* ── FOOTER LINKS ── */
+.kali-footer-links {
+  text-align: center;
+  padding: 0 0 32px;
+  font-size: 0.82rem;
+}
+.kali-footer-links a { color: #6b7280; text-decoration: none; transition: color 0.2s; }
+.kali-footer-links a:hover { color: #111; }
+.kali-footer-links .sep { color: #d1d5db; margin: 0 6px; }
+
+/* ── MOBILE ── */
+@media (max-width: 768px) {
+  .kali-hero h1 { font-size: 2rem; }
+  .kali-hero .ctas { flex-direction: column; align-items: center; }
+  .kali-term-body { font-size: 10px; }
+  .kali-insights { grid-template-columns: 1fr; }
+  .cap-primary { grid-template-columns: 1fr; }
+  .cap-secondary { grid-template-columns: 1fr 1fr; }
+  .install-chip { font-size: 0.85rem; padding: 14px 24px; }
+}

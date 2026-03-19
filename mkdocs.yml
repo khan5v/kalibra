@@ -1,0 +1,51 @@
+site_name: Kalibra
+site_url: https://kalibra.cc
+site_description: Regression detection and CI quality gates for AI agents
+site_author: Vladimir Orekhov
+repo_url: https://github.com/khan5v/kalibra
+repo_name: khan5v/kalibra
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  palette:
+    scheme: default
+    primary: custom
+    accent: custom
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - attr_list
+  - md_in_html
+  - tables
+
+extra: {}
