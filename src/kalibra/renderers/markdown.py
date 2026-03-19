@@ -45,10 +45,21 @@ def render_markdown(result: CompareResult, verbose: bool = False) -> str:
     """Render a CompareResult as Markdown."""
     lines: list[str] = []
 
-    # Header
-    badge = _BADGE[result.direction]
-    label = _LABEL[result.direction]
-    lines.append(f"## {badge} Kalibra Compare — {label}")
+    # Header — gate result takes priority when gates are configured
+    if result.gates:
+        n_failed = sum(1 for g in result.gates if not g.passed and not g.warning)
+        n_total = len(result.gates)
+        if n_failed == 0:
+            lines.append(f"## ✅ Kalibra Compare — All quality gates passed")
+        else:
+            lines.append(
+                f"## ❌ Kalibra Compare — {n_failed}/{n_total}"
+                f" quality gate{'s' if n_failed > 1 else ''} failed"
+            )
+    else:
+        badge = _BADGE[result.direction]
+        label = _LABEL[result.direction]
+        lines.append(f"## {badge} Kalibra Compare — {label}")
     lines.append("")
     lines.append(
         f"**Baseline:** {result.baseline_count:,} traces ({result.baseline_source})  "

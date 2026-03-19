@@ -64,6 +64,29 @@ def render_terminal(result: CompareResult, verbose: bool = False) -> str:
     b_src = click.style(f"({result.baseline_source})", dim=True)
     c_src = click.style(f"({result.current_source})", dim=True)
 
+    # Direction line — gate result takes priority when gates exist
+    if result.gates:
+        n_failed = sum(1 for g in result.gates if not g.passed and not g.warning)
+        n_total = len(result.gates)
+        if n_failed == 0:
+            gate_line = (
+                f"{_INDENT}{click.style('Gates', dim=True)}"
+                f"         "
+                f"{click.style('✓ All passed', fg='green', bold=True)}"
+                f"  {click.style(f'({n_total} checked)', dim=True)}"
+            )
+        else:
+            gate_line = (
+                f"{_INDENT}{click.style('Gates', dim=True)}"
+                f"         "
+                f"{click.style(f'✗ {n_failed}/{n_total} failed', fg='red', bold=True)}"
+            )
+    else:
+        gate_line = (
+            f"{_INDENT}{click.style('Direction', dim=True)}"
+            f" {badge} {dir_label}"
+        )
+
     lines = [
         "",
         f"{_INDENT}{click.style('Kalibra Compare', bold=True)}",
@@ -72,8 +95,7 @@ def render_terminal(result: CompareResult, verbose: bool = False) -> str:
          f"  {result.baseline_count:>8,} traces   {b_src}"),
         (f"{_INDENT}{click.style('Current', dim=True)}"
          f"   {result.current_count:>8,} traces   {c_src}"),
-        (f"{_INDENT}{click.style('Direction', dim=True)}"
-         f" {badge} {dir_label}"),
+        gate_line,
         "",
     ]
 
@@ -119,9 +141,9 @@ def render_terminal(result: CompareResult, verbose: bool = False) -> str:
     for o in other:
         _render_metric(lines, o, verbose)
 
-    # ── Thresholds ────────────────────────────────────────────────────
+    # ── Quality gates ─────────────────────────────────────────────────
     if result.gates:
-        lines.append(f"{_INDENT}{click.style('Thresholds', bold=True)}")
+        lines.append(f"{_INDENT}{click.style('Quality gates', bold=True)}")
         max_expr = max(len(g.expr) for g in result.gates)
         for g in result.gates:
             if g.warning:
