@@ -197,11 +197,20 @@ def _group_spans(raw_spans: list[dict]) -> list[Trace]:
 
 # ── LLM finish reason extraction ──────────────────────────────────────────────
 #
-# OpenInference doesn't standardize the LLM completion reason. It lives
-# inside output.value as provider-specific JSON. We parse it for the
-# three major providers.
+# Neither OpenInference nor OpenTelemetry GenAI conventions define a
+# standard attribute for LLM completion reason (e.g. "stop", "length",
+# "max_tokens"). The raw provider response is stored as a JSON string
+# in the output.value attribute, and each provider uses a different
+# field name and value set:
 #
-# Returns: "complete", "truncated", "tool_call", "filtered", or None.
+#   Anthropic:  stop_reason   ("end_turn", "max_tokens", "tool_use")
+#   OpenAI:     choices[0].finish_reason  ("stop", "length", "tool_calls")
+#   Google:     candidates[0].finishReason  ("STOP", "MAX_TOKENS", "SAFETY")
+#
+# This is a best-effort parser for the three major providers. It
+# normalizes their values to: "complete", "truncated", "tool_call",
+# "filtered", or None (unknown/absent).
+#
 # Provider response formats are subject to change — update the maps
 # and extraction logic when they do.
 
@@ -230,11 +239,12 @@ _GOOGLE_REASON_MAP = {
 
 
 def _extract_finish_reason(attrs: dict) -> str | None:
-    """Extract LLM completion reason from output.value.
+    """Best-effort extraction of LLM completion reason from output.value.
 
-    Parses the provider-specific JSON inside the output.value attribute
-    to determine whether the model completed naturally, was truncated,
-    or made a tool call.
+    There is no standard attribute for this in OpenInference or OTel
+    GenAI conventions. Each provider embeds the reason in their own
+    response format inside output.value. This function parses the JSON
+    for Anthropic, OpenAI, and Google, and normalizes to a common set.
 
     Returns: "complete", "truncated", "tool_call", "filtered", or None.
     """

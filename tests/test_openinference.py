@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
 from kalibra.openinference import (
     _extract_finish_reason,
     _flatten_attrs,
@@ -20,8 +21,6 @@ from kalibra.openinference import (
     load_openinference_json,
     load_openinference_jsonl,
 )
-from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
-
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
