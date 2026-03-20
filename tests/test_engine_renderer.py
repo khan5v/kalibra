@@ -653,6 +653,98 @@ class TestEdgeCases:
         assert cost_obs.baseline["median"] == 0.05
         assert cost_obs.current["median"] == 0.03
 
+    def test_inconclusive_gate_skipped(self):
+        """When a metric's CI includes zero (direction=SAME), delta gates
+        should be skipped rather than evaluated against the point estimate.
+
+        The gate threshold is set to something the point estimate would
+        FAIL (-50%), proving the skip actually prevented a false failure.
+        """
+        # Small n + overlapping values → CI will include zero → SAME direction.
+        random.seed(42)
+        baseline = [
+            Trace(trace_id=f"b-{i}", _cost=0.05 + random.uniform(-0.02, 0.02),
+                  outcome=OUTCOME_SUCCESS)
+            for i in range(10)
+        ]
+        current = [
+            Trace(trace_id=f"c-{i}", _cost=0.051 + random.uniform(-0.02, 0.02),
+                  outcome=OUTCOME_SUCCESS)
+            for i in range(10)
+        ]
+
+        result = compare(
+            baseline, current,
+            metrics=["cost"],
+            # Threshold that the point estimate would fail — but skip saves it.
+            require=["cost_delta_pct <= -50"],
+        )
+
+        # Cost direction should be SAME (CI includes zero at n=10).
+        cost_obs = result.observations["cost"]
+        assert cost_obs.direction == Direction.SAME
+
+        # The delta gate should be SKIPPED, not evaluated.
+        # Without the skip, this would FAIL (actual > -50%).
+        gate = result.gates[0]
+        assert gate.passed is True
+        assert gate.warning is not None
+        assert "not statistically significant" in gate.warning
+
+    def test_conclusive_gate_evaluated(self):
+        """When a metric's CI does NOT include zero, delta gates
+        should be evaluated normally — and fail when violated."""
+        random.seed(42)
+        baseline = [
+            Trace(trace_id=f"b-{i}", _cost=0.05, outcome=OUTCOME_SUCCESS)
+            for i in range(50)
+        ]
+        current = [
+            Trace(trace_id=f"c-{i}", _cost=0.10, outcome=OUTCOME_SUCCESS)
+            for i in range(50)
+        ]
+
+        result = compare(
+            baseline, current,
+            metrics=["cost"],
+            require=["cost_delta_pct <= 50"],
+        )
+
+        # Cost direction should NOT be SAME (clear 100% increase).
+        cost_obs = result.observations["cost"]
+        assert cost_obs.direction != Direction.SAME
+
+        # Gate should be evaluated (not skipped) and FAIL (100% > 50%).
+        gate = result.gates[0]
+        assert gate.warning is None
+        assert gate.passed is False
+
+    def test_absolute_field_not_skipped_when_inconclusive(self):
+        """Absolute fields (success_rate, total_cost) should still be
+        evaluated even when the delta is inconclusive."""
+        random.seed(42)
+        baseline = [
+            Trace(trace_id=f"b-{i}", _cost=0.05 + random.uniform(-0.01, 0.01),
+                  outcome=OUTCOME_SUCCESS)
+            for i in range(10)
+        ]
+        current = [
+            Trace(trace_id=f"c-{i}", _cost=0.06 + random.uniform(-0.01, 0.01),
+                  outcome=OUTCOME_SUCCESS)
+            for i in range(10)
+        ]
+
+        result = compare(
+            baseline, current,
+            metrics=["cost"],
+            require=["total_cost <= 1.0"],
+        )
+
+        # total_cost is an absolute field, not a delta — should be evaluated.
+        gate = result.gates[0]
+        assert gate.warning is None  # Not skipped
+        assert gate.passed is True  # total < 1.0
+
     def test_all_renderers_no_crash(self):
         """All three renderers should handle any CompareResult without crashing."""
         random.seed(42)

@@ -151,6 +151,10 @@ def compare(
     # Run metrics.
     observations: dict[str, Observation] = {}
     threshold_values: dict[str, float] = {}
+    # Fields to skip in gate evaluation — the metric's direction was
+    # SAME (CI includes zero or delta below noise), so the point
+    # estimate is unreliable for gating.
+    inconclusive_fields: set[str] = set()
 
     for m in active:
         noise = noise_thresholds.get(m.name)
@@ -161,10 +165,17 @@ def compare(
 
         obs = m.compare(baseline, current)
         observations[obs.name] = obs
-        threshold_values.update(m.threshold_fields(obs))
+        fields = m.threshold_fields(obs)
+        threshold_values.update(fields)
+
+        # If direction is SAME, mark delta fields as inconclusive.
+        if obs.direction == Direction.SAME and obs.delta is not None:
+            for field_name in fields:
+                if field_name.endswith(("_delta", "_delta_pct", "_delta_pp")):
+                    inconclusive_fields.add(field_name)
 
     # Evaluate gates.
-    gates = _eval_gates(threshold_values, parsed_exprs)
+    gates = _eval_gates(threshold_values, parsed_exprs, inconclusive_fields)
 
     return CompareResult(
         direction=_rollup_direction(observations),
@@ -306,7 +317,9 @@ def _validate_require(
 def _eval_gates(
     values: dict[str, float],
     parsed_exprs: list[_ParsedExpr],
+    inconclusive_fields: set[str] | None = None,
 ) -> list[GateResult]:
+    inconclusive_fields = inconclusive_fields or set()
     gates = []
     for p in parsed_exprs:
         if p.field not in values:
@@ -314,7 +327,21 @@ def _eval_gates(
                 expr=p.raw,
                 passed=True,
                 actual=float("nan"),
-                warning=f"Metric produced no data for {p.field!r} — gate skipped",
+                warning=(
+                    f"Metric produced no data for {p.field!r}"
+                    " — gate skipped"
+                ),
+            ))
+            continue
+        if p.field in inconclusive_fields:
+            gates.append(GateResult(
+                expr=p.raw,
+                passed=True,
+                actual=round(values[p.field], 4),
+                warning=(
+                    "Change is not statistically significant"
+                    " — gate skipped"
+                ),
             ))
             continue
         actual = values[p.field]
