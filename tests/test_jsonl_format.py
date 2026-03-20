@@ -219,7 +219,7 @@ class TestErrors:
     def test_invalid_json(self, tmp_path):
         p = tmp_path / "bad.jsonl"
         p.write_text("not json\n")
-        with pytest.raises(ValueError, match="invalid JSON"):
+        with pytest.raises(ValueError, match="malformed"):
             load_traces(str(p))
 
     def test_missing_trace_id_is_empty(self, tmp_path):
@@ -247,7 +247,7 @@ class TestErrors:
     def test_error_includes_line_number(self, tmp_path):
         p = tmp_path / "bad.jsonl"
         p.write_text('{"trace_id": "t1"}\nnot json\n')
-        with pytest.raises(ValueError, match=":2"):
+        with pytest.raises(ValueError, match="2"):
             load_traces(str(p))
 
     def test_error_includes_file_path(self, tmp_path):

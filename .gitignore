@@ -16,7 +16,6 @@ cached_sources/*
 data/
 config/showcase/
 .DS_Store
-*.jsonl
 !examples/*.jsonl
 .c*
 !src/kalibra/demo_data/*.jsonl
