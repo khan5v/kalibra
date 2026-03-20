@@ -68,10 +68,35 @@ def load_traces(
 # ── JSONL loader ──────────────────────────────────────────────────────────────
 
 def _load_jsonl(path: Path, trace_id_field: str | None) -> list[Trace]:
-    """Load traces from JSONL — one line per trace, spans nested inside."""
+    """Load traces from JSONL — one line per trace, spans nested inside.
+
+    Peeks at the first line to detect OpenInference format (flat spans
+    with context.trace_id). If detected, reads all lines and groups
+    spans into traces. Otherwise, treats each line as a separate trace.
+    """
+    # Peek at first non-empty line to detect format.
+    first_row = None
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                first_row = json.loads(line)
+            except json.JSONDecodeError:
+                break
+            break
+
+    if isinstance(first_row, dict):
+        from kalibra.openinference import is_openinference, load_openinference_jsonl
+        if is_openinference(first_row):
+            return load_openinference_jsonl(path)
+
+    # Standard JSONL: one trace per line.
     id_field = trace_id_field or "trace_id"
     traces = []
 
+    bad_lines: list[int] = []
     with open(path) as f:
         for line_no, line in enumerate(f, 1):
             line = line.strip()
@@ -80,15 +105,29 @@ def _load_jsonl(path: Path, trace_id_field: str | None) -> list[Trace]:
 
             try:
                 row = json.loads(line)
-            except json.JSONDecodeError as exc:
-                _error(path, line_no, f"invalid JSON — {exc}")
+            except json.JSONDecodeError:
+                bad_lines.append(line_no)
+                continue
 
             if not isinstance(row, dict):
-                _error(path, line_no, f"expected JSON object, got {type(row).__name__}")
+                bad_lines.append(line_no)
+                continue
 
             row = _auto_parse_json_strings(row)
             trace_id = _resolve_trace_id(row, id_field, path, line_no)
             traces.append(_row_to_trace(row, trace_id))
+
+    if bad_lines:
+        n = len(bad_lines)
+        sample = ", ".join(str(ln) for ln in bad_lines[:5])
+        if n > 5:
+            sample += f", ... ({n} total)"
+        raise ValueError(
+            f"\n  {path} — {n} malformed line(s): {sample}\n"
+            f"  Successfully parsed {len(traces)} trace(s), "
+            f"but cannot proceed with corrupt input.\n"
+            f"  Fix or remove the invalid lines and retry."
+        )
 
     return traces
 
@@ -118,6 +157,11 @@ def _try_load_json_array(path: Path, trace_id_field: str | None) -> list[Trace] 
 
     id_field = trace_id_field or "trace_id"
     has_id = id_field in first_item or "trace_id" in first_item
+
+    # Check if it's OpenInference (flat span array with context.trace_id).
+    from kalibra.openinference import is_openinference, load_openinference_json
+    if is_openinference(first_item):
+        return load_openinference_json(data)
 
     # Check if it's nested OTel (has "spans" with "child_spans").
     if has_id and "spans" in first_item:
@@ -345,10 +389,10 @@ def _resolve_trace_id(
 ) -> str:
     """Resolve the trace ID from a row.
 
-    Uses the configured field if present, otherwise falls back to a
-    synthetic ID from the line number. Never guesses — if the user
-    didn't configure a field, they get line-number IDs and inspect
-    will tell them which field to set.
+    Uses the configured field if present, otherwise returns "".
+    Never guesses — if the user didn't configure a field and the data
+    lacks a trace_id, the trace gets an empty ID and inspect will
+    tell them which field to set.
     """
     if id_field != "trace_id" and id_field in row:
         return str(row[id_field])
@@ -393,14 +437,17 @@ def _parse_ts_to_ns(val) -> int:
 
 
 def _iso_to_ns(ts: str) -> int:
-    """Parse ISO 8601 timestamp to nanoseconds."""
+    """Parse ISO 8601 timestamp to nanoseconds.
+
+    Handles: Z suffix, +HH:MM offsets, -HH:MM offsets, fractional seconds.
+    """
+    if not ts:
+        return 0
     try:
-        ts = ts.rstrip("Z")
-        if "." in ts:
-            dt = datetime.strptime(ts[:26], "%Y-%m-%dT%H:%M:%S.%f")
-        else:
-            dt = datetime.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S")
-        dt = dt.replace(tzinfo=timezone.utc)
+        # Python 3.11+ datetime.fromisoformat handles most ISO 8601.
+        dt = datetime.fromisoformat(ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
         return int(dt.timestamp() * 1e9)
     except (ValueError, TypeError):
         return 0
@@ -425,7 +472,7 @@ def _auto_parse_json_strings(obj):
         return {k: _auto_parse_json_strings(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_auto_parse_json_strings(v) for v in obj]
-    if isinstance(obj, str) and obj and obj[0] in ("{", "["):
+    if isinstance(obj, str) and obj and obj.lstrip()[0:1] in ("{", "["):
         try:
             return _auto_parse_json_strings(json.loads(obj))
         except (json.JSONDecodeError, ValueError):
@@ -514,10 +561,9 @@ def _apply_fields(traces: list[Trace], fields: object) -> None:
             if val is not None:
                 trace.metadata["task_id"] = val
 
-        # ── Cost/token field mappings ─────────────────────────────────
+        # ── Cost/token/duration field mappings ─────────────────────────
         if cost_field or input_tokens_field or output_tokens_field:
             if trace.spans:
-                # Has spans — apply to each span.
                 for span in trace.spans:
                     lookup = span.attributes
                     if cost_field and span.cost is None:
@@ -533,7 +579,6 @@ def _apply_fields(traces: list[Trace], fields: object) -> None:
                         if val is not None:
                             span.output_tokens = int(val)
             else:
-                # No spans — apply to trace-level fields via metadata.
                 if cost_field and trace._cost is None:
                     val = _resolve_dot_path(trace.metadata, cost_field)
                     if val is not None:
@@ -546,10 +591,12 @@ def _apply_fields(traces: list[Trace], fields: object) -> None:
                     val = _resolve_dot_path(trace.metadata, output_tokens_field)
                     if val is not None:
                         trace._output_tokens = int(val)
-                if duration_field and trace._duration_s is None:
-                    val = _resolve_dot_path(trace.metadata, duration_field)
-                    if val is not None:
-                        trace._duration_s = float(val)
+
+        # Duration mapping — independent of cost/token fields.
+        if duration_field and not trace.spans and trace._duration_s is None:
+            val = _resolve_dot_path(trace.metadata, duration_field)
+            if val is not None:
+                trace._duration_s = float(val)
 
 
 def _classify_outcome(val) -> str | None:

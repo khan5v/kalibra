@@ -119,7 +119,14 @@ class Trace:
 
     @property
     def total_cost(self) -> float | None:
-        """Sum of all span costs. None if no span has cost and no trace-level cost."""
+        """Sum of all span costs. None if no span has cost and no trace-level cost.
+
+        Safe for tree-structured traces: OpenInference convention puts
+        cost only on LLM spans. Orchestration spans (CHAIN, AGENT) have
+        cost=None and are excluded by the filter. If a data source violates
+        this convention (parent carries aggregated child costs), this sum
+        will double-count — but no major platform does this today.
+        """
         if self.spans:
             costs = [s.cost for s in self.spans if s.cost is not None]
             if not costs:
@@ -129,7 +136,10 @@ class Trace:
 
     @property
     def total_tokens(self) -> int | None:
-        """Sum of all span tokens. None if no span has tokens and no trace-level tokens."""
+        """Sum of all span tokens. None if no span has tokens and no trace-level tokens.
+
+        Same aggregation model as total_cost — see that docstring.
+        """
         if self.spans:
             tokens = [s.total_tokens for s in self.spans if s.total_tokens is not None]
             if not tokens:
@@ -142,3 +152,16 @@ class Trace:
     def root_spans(self) -> list[Span]:
         """Spans with no parent."""
         return [s for s in self.spans if s.parent_id is None]
+
+    def leaf_spans(self) -> list[Span]:
+        """Spans that have no children in the tree.
+
+        In an agent trace, orchestration spans (CHAIN, AGENT) are envelopes
+        around the actual work — LLM calls, tool invocations, retrievals.
+        Leaf spans represent those concrete execution steps.
+
+        Used by the steps metric: counting leaves gives "how many things
+        did the agent actually do", not "how deep is the span tree."
+        """
+        parent_ids = {s.parent_id for s in self.spans if s.parent_id is not None}
+        return [s for s in self.spans if s.span_id not in parent_ids]

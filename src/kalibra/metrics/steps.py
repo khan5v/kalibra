@@ -1,8 +1,9 @@
-"""Steps metric — compares number of spans (steps) per trace.
+"""Steps metric — compares number of execution steps per trace.
 
 Computation:
-    For each trace, count len(trace.spans) — the number of execution steps.
-    Compare distributions across baseline and current.
+    For each trace, count leaf spans — spans with no children in the tree.
+    Orchestration wrappers (CHAIN, AGENT) are envelopes, not steps.
+    The actual work (LLM calls, tool invocations) happens at the leaves.
 
 Statistical approach:
     Headline: median step count change (resistant to outlier traces with retries).
@@ -31,7 +32,7 @@ from kalibra.model import Trace
 
 class StepsMetric(ComparisonMetric):
     name = "steps"
-    description = "Steps per trace — median and average span count"
+    description = "Steps per trace — median and average leaf span count"
     noise_threshold = 3.0  # % — ignores minor fluctuations in primary metrics
     higher_is_better = False
     _fields = {
@@ -45,9 +46,12 @@ class StepsMetric(ComparisonMetric):
         baseline: list[Trace],
         current: list[Trace],
     ) -> Observation:
-        # Only count traces that have span data. Empty spans = no step info.
-        b_steps = [float(len(t.spans)) for t in baseline if t.spans]
-        c_steps = [float(len(t.spans)) for t in current if t.spans]
+        # Count leaf spans — concrete execution steps, not orchestration
+        # wrappers. A 3-step agent (plan → tool → respond) wrapped in a
+        # CHAIN span has 4 total spans but 3 leaf spans. The leaf count
+        # is the meaningful measure of "how many things did the agent do."
+        b_steps = [float(len(t.leaf_spans())) for t in baseline if t.spans]
+        c_steps = [float(len(t.leaf_spans())) for t in current if t.spans]
 
         if not b_steps or not c_steps:
             return self._no_data(
