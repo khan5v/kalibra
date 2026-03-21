@@ -303,6 +303,17 @@ def _row_to_trace(row: dict, trace_id: str) -> Trace:
     if not isinstance(metadata, dict):
         metadata = {}
 
+    # Collect extra fields as metadata — always, regardless of spans.
+    for k, v in row.items():
+        if k not in _TRACE_KNOWN_FIELDS and v is not None:
+            if isinstance(v, dict):
+                _flatten_dict(v, prefix=k, out=metadata)
+            elif not isinstance(v, list):
+                metadata[k] = v
+    extra = row.get("attributes")
+    if isinstance(extra, dict):
+        metadata.update(extra)
+
     # Parse spans if present.
     raw_spans = row.get("spans")
     if isinstance(raw_spans, list) and raw_spans:
@@ -317,17 +328,6 @@ def _row_to_trace(row: dict, trace_id: str) -> Trace:
 
     # No spans — set trace-level fields directly. Spans stays empty.
     start_ns, end_ns = _parse_timing(row)
-
-    # Collect extra fields as metadata (for inspect visibility).
-    for k, v in row.items():
-        if k not in _TRACE_KNOWN_FIELDS and v is not None:
-            if isinstance(v, dict):
-                _flatten_dict(v, prefix=k, out=metadata)
-            elif not isinstance(v, list):
-                metadata[k] = v
-    extra = row.get("attributes")
-    if isinstance(extra, dict):
-        metadata.update(extra)
 
     # Only set trace-level fields that actually exist in the row.
     # Missing = None (not measured), present = the value (even if 0).

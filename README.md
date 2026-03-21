@@ -176,6 +176,24 @@ current:
   fields: { outcome: scores.correctness, cost: metrics.cost }
 ```
 
+## Filtering with `where`
+
+Split a single trace file into populations using Prometheus-style matchers:
+
+```yaml
+sources:
+  baseline:
+    path: ./traces.jsonl
+    where:
+      - variant == baseline
+  current:
+    path: ./traces.jsonl
+    where:
+      - variant == current
+```
+
+Operators: `==` (equal), `!=` (not equal), `=~` (regex match), `!~` (regex not match). Multiple matchers are ANDed. Traces missing the field are excluded.
+
 ## Python API
 
 ```python

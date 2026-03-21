@@ -60,6 +60,28 @@ Then:
 kalibra compare    # reads kalibra.yml, exits 1 on failure
 ```
 
+### Filtering from a single file
+
+If your baseline and current traces are in the same file (tagged by a field like `variant`), use `where` to split them:
+
+```yaml
+sources:
+  baseline:
+    path: ./all-traces.jsonl
+    where:
+      - variant == baseline
+  current:
+    path: ./all-traces.jsonl
+    where:
+      - variant == current
+
+require:
+  - success_rate_delta >= -2
+  - regressions <= 5
+```
+
+Operators: `==` (equal), `!=` (not equal), `=~` (regex match), `!~` (regex not match). Multiple matchers are ANDed. Traces missing the field are excluded.
+
 ## Add to CI
 
 ```yaml

@@ -2,11 +2,67 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from dataclasses import field as dc_field
 from pathlib import Path
 
 CONFIG_FILENAME = "kalibra.yml"
+
+
+# ── Matchers (Prometheus-style) ──────────────────────────────────────────────
+# Five operators: == (equal), != (not equal), =~ (regex match), !~ (regex no match), = (alias for ==).
+# Multiple matchers in a list are ANDed.
+
+# Ordered longest-first so == and =~ are tried before =.
+_OPERATORS = ["==", "=~", "!~", "!=", "="]
+
+
+@dataclass
+class Matcher:
+    """A single field matcher: field op value."""
+
+    field: str
+    op: str
+    value: str
+
+    def matches(self, actual: str | None) -> bool:
+        """Test whether actual matches. None (missing field) never matches."""
+        if actual is None:
+            return False
+        actual_str = str(actual)
+        if self.op in ("=", "=="):
+            return actual_str == self.value
+        if self.op == "!=":
+            return actual_str != self.value
+        if self.op == "=~":
+            return bool(re.fullmatch(self.value, actual_str))
+        if self.op == "!~":
+            return not re.fullmatch(self.value, actual_str)
+        return False
+
+
+def parse_matcher(expr: str) -> Matcher:
+    """Parse a matcher string like 'field = value' into a Matcher."""
+    for op in _OPERATORS:
+        idx = expr.find(op)
+        if idx != -1:
+            field = expr[:idx].strip()
+            value = expr[idx + len(op):].strip()
+            if not field:
+                raise ValueError(f"Empty field name in matcher: {expr!r}")
+            if op in ("=~", "!~"):
+                try:
+                    re.compile(value)
+                except re.error as exc:
+                    raise ValueError(
+                        f"Invalid regex in matcher {expr!r}: {exc}"
+                    ) from None
+            return Matcher(field=field, op=op, value=value)
+    raise ValueError(
+        f"No operator found in matcher: {expr!r}. "
+        f"Use one of: {', '.join(_OPERATORS)}"
+    )
 
 
 # ── Field mappings ────────────────────────────────────────────────────────────
@@ -60,19 +116,25 @@ class PopulationConfig:
 
     ``path`` points to a local JSONL file.
     ``fields`` optionally overrides global field mappings for this source.
+    ``where`` filters traces after loading — only traces matching all
+    matchers are included. Prometheus-style: ``==``, ``!=``, ``=~``, ``!~``.
     """
 
     path: str | None = None
     fields: FieldsConfig | None = None
+    where: list[Matcher] = dc_field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict | None) -> PopulationConfig | None:
         if data is None or not isinstance(data, dict):
             return None
         fields_data = data.get("fields")
+        raw_where = data.get("where") or []
+        matchers = [parse_matcher(str(w)) for w in raw_where]
         return cls(
             path=data.get("path"),
             fields=FieldsConfig.from_dict(fields_data) if fields_data else None,
+            where=matchers,
         )
 
 

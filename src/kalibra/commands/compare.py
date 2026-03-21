@@ -78,9 +78,13 @@ def run_compare(
     if require:
         config.require = list(require)
 
-    # ── Resolve baseline/current paths ────────────────────────────────────
-    baseline_path = _resolve_path(baseline, config.baseline, "baseline", config)
-    current_path = _resolve_path(current, config.current, "current", config)
+    # ── Resolve baseline/current populations ─────────────────────────────
+    baseline_path, b_resolved = _resolve_pop(
+        baseline, config.baseline, "baseline", config,
+    )
+    current_path, c_resolved = _resolve_pop(
+        current, config.current, "current", config,
+    )
 
     if not baseline_path or not current_path:
         display.no_data()
@@ -123,8 +127,8 @@ def run_compare(
         ctx.exit(2)
 
     # ── Load traces ───────────────────────────────────────────────────────
-    b_pop = config.baseline
-    c_pop = config.current
+    b_pop = b_resolved or config.baseline
+    c_pop = c_resolved or config.current
     b_fields = config.fields.merge(b_pop.fields if b_pop else None)
     c_fields = config.fields.merge(c_pop.fields if c_pop else None)
 
@@ -137,6 +141,10 @@ def run_compare(
     except ValueError as exc:
         display.load_error(baseline_path, str(exc))
         raise SystemExit(1) from None
+
+    # ── Apply where filters ────────────────────────────────────────────
+    b_traces = _apply_where(b_traces, b_pop, "baseline", out_format, quiet)
+    c_traces = _apply_where(c_traces, c_pop, "current", out_format, quiet)
 
     # ── Build metric_config from fields ───────────────────────────────────
     metric_config: dict[str, dict] = {}
@@ -170,20 +178,57 @@ def run_compare(
         raise SystemExit(1)
 
 
-def _resolve_path(
+def _resolve_where_field(trace, field: str):
+    """Look up a field for where-filtering: metadata first, then root span attributes."""
+    val = trace.metadata.get(field)
+    if val is not None:
+        return val
+    # Fall back to root span attributes — catches fields skipped by
+    # OpenInference metadata extraction (llm.*, openinference.*, etc.).
+    for s in trace.spans:
+        if s.parent_id is None:
+            val = s.attributes.get(field)
+            if val is not None:
+                return val
+    return None
+
+
+def _apply_where(traces, pop, label, out_format, quiet):
+    """Filter traces using population where-matchers. Returns filtered list."""
+    if not pop or not pop.where:
+        return traces
+    before = len(traces)
+    filtered = [
+        t for t in traces
+        if all(m.matches(_resolve_where_field(t, m.field)) for m in pop.where)
+    ]
+    after = len(filtered)
+    exprs = ", ".join(f"{m.field} {m.op} {m.value}" for m in pop.where)
+    _status(
+        f"  {label}: {after}/{before} traces matched (where: {exprs})",
+        out_format, quiet,
+    )
+    return filtered
+
+
+def _resolve_pop(
     flag_value: str | None,
     config_pop,
     label: str,
     config,
-) -> str | None:
-    """Resolve a file path from CLI flag or config population."""
+) -> tuple[str | None, PopulationConfig | None]:
+    """Resolve a file path and population config from CLI flag or config.
+
+    When a CLI flag references a named source, returns that source's
+    PopulationConfig so its fields and where-clauses are used.
+    """
     if flag_value:
         # Check if it's a named source from config.
         named = config.get_source(flag_value)
         if named and named.path:
-            return named.path
-        # Treat as file path.
-        return flag_value
+            return named.path, named
+        # Treat as file path — no population config.
+        return flag_value, None
     if config_pop and config_pop.path:
-        return config_pop.path
-    return None
+        return config_pop.path, config_pop
+    return None, None
