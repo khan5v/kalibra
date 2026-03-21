@@ -18,6 +18,12 @@ This creates a `kalibra-demo/` directory with sample traces and runs an interact
 kalibra compare kalibra-demo/baseline.jsonl kalibra-demo/current.jsonl -v
 ```
 
+## Try the tutorial
+
+For a deeper walkthrough — loading real multi-step agent traces, splitting by tags, and seeing how aggregate metrics hide regressions — try the interactive notebook. Run a live agent with your Anthropic key, or explore instantly with pre-recorded traces.
+
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb)
+
 ## Compare your own data
 
 ```bash

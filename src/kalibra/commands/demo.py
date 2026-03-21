@@ -127,7 +127,7 @@ def run_demo() -> None:
     click.echo(render(result, "terminal", verbose=True))
 
     # ── Beat 3: Findings + next steps ──────────────────────────────────
-    if not _prompt_continue("Press Enter to see what Kalibra found, q to quit"):
+    if not _prompt_continue("Press Enter to see what Kalibra found, q to quit "):
         click.echo()
         return
 
@@ -227,5 +227,10 @@ def run_demo() -> None:
     click.echo(
         f"    kalibra compare --metrics"
         f"                  {click.style('# see all available gate fields', dim=True)}"
+    )
+    click.echo()
+    click.echo(f"  {click.style('Phoenix + OpenInference tutorial', fg='cyan', bold=True)}")
+    click.echo(
+        f"    {click.style('https://github.com/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb', dim=True)}"
     )
     click.echo()

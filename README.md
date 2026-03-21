@@ -223,6 +223,14 @@ kalibra init                          Create kalibra.yml interactively
 kalibra demo                          Run comparison on built-in sample data
 ```
 
+## Phoenix / OpenInference
+
+Kalibra auto-detects trace exports from [Phoenix](https://github.com/Arize-ai/phoenix). No field mapping needed.
+
+The [tutorial notebook](https://github.com/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb) walks through a full example — works without an API key using pre-recorded traces.
+
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb)
+
 ## Development
 
 ```bash
