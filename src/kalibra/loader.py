@@ -17,6 +17,7 @@ Full trace with spans:
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -250,9 +251,9 @@ def _flatten_otel_span(
         parent_id=parent_id,
         start_ns=start_ns,
         end_ns=end_ns,
-        cost=float(raw_cost) if raw_cost is not None else None,
-        input_tokens=int(raw_in) if raw_in is not None else None,
-        output_tokens=int(raw_out) if raw_out is not None else None,
+        cost=_safe_float(raw_cost),
+        input_tokens=_safe_int(raw_in),
+        output_tokens=_safe_int(raw_out),
         model=model,
         error=is_error,
         attributes={k: v for k, v in attrs.items() if v is not None},
@@ -336,16 +337,16 @@ def _row_to_trace(row: dict, trace_id: str) -> Trace:
     raw_out = row.get("output_tokens")
     duration = (end_ns - start_ns) / 1e9 if (start_ns or end_ns) else None
     if duration is None and "duration_s" in row:
-        duration = float(row["duration_s"])
+        duration = _safe_float(row["duration_s"])
 
     return Trace(
         trace_id=trace_id,
         spans=[],
         outcome=outcome,
         metadata=metadata,
-        _cost=float(raw_cost) if raw_cost is not None else None,
-        _input_tokens=int(raw_in) if raw_in is not None else None,
-        _output_tokens=int(raw_out) if raw_out is not None else None,
+        _cost=_safe_float(raw_cost),
+        _input_tokens=_safe_int(raw_in),
+        _output_tokens=_safe_int(raw_out),
         _duration_s=duration,
     )
 
@@ -370,9 +371,9 @@ def _dict_to_span(d: dict) -> Span:
         parent_id=d.get("parent_id"),
         start_ns=start_ns,
         end_ns=end_ns,
-        cost=float(raw_cost) if raw_cost is not None else None,
-        input_tokens=int(raw_in) if raw_in is not None else None,
-        output_tokens=int(raw_out) if raw_out is not None else None,
+        cost=_safe_float(raw_cost),
+        input_tokens=_safe_int(raw_in),
+        output_tokens=_safe_int(raw_out),
         model=d.get("model"),
         error=bool(d.get("error", False)),
         attributes=d.get("attributes") or {},
@@ -424,13 +425,18 @@ def _parse_timing(row: dict) -> tuple[int, int]:
 def _parse_ts_to_ns(val) -> int:
     """Parse a timestamp to nanoseconds."""
     if isinstance(val, (int, float)):
+        if math.isnan(val) or math.isinf(val):
+            return 0
         if val < 1e12:
             return int(val * 1e9)
         if val < 1e15:
             return int(val * 1e6)
         if val < 1e18:
             return int(val * 1e3)
-        return int(val)
+        try:
+            return int(val)
+        except OverflowError:
+            return 0
     if isinstance(val, str):
         return _iso_to_ns(val)
     return 0
@@ -569,34 +575,34 @@ def _apply_fields(traces: list[Trace], fields: object) -> None:
                     if cost_field and span.cost is None:
                         val = _resolve_dot_path(lookup, cost_field)
                         if val is not None:
-                            span.cost = float(val)
+                            span.cost = _safe_float(val)
                     if input_tokens_field and span.input_tokens is None:
                         val = _resolve_dot_path(lookup, input_tokens_field)
                         if val is not None:
-                            span.input_tokens = int(val)
+                            span.input_tokens = _safe_int(val)
                     if output_tokens_field and span.output_tokens is None:
                         val = _resolve_dot_path(lookup, output_tokens_field)
                         if val is not None:
-                            span.output_tokens = int(val)
+                            span.output_tokens = _safe_int(val)
             else:
                 if cost_field and trace._cost is None:
                     val = _resolve_dot_path(trace.metadata, cost_field)
                     if val is not None:
-                        trace._cost = float(val)
+                        trace._cost = _safe_float(val)
                 if input_tokens_field and trace._input_tokens is None:
                     val = _resolve_dot_path(trace.metadata, input_tokens_field)
                     if val is not None:
-                        trace._input_tokens = int(val)
+                        trace._input_tokens = _safe_int(val)
                 if output_tokens_field and trace._output_tokens is None:
                     val = _resolve_dot_path(trace.metadata, output_tokens_field)
                     if val is not None:
-                        trace._output_tokens = int(val)
+                        trace._output_tokens = _safe_int(val)
 
         # Duration mapping — independent of cost/token fields.
         if duration_field and not trace.spans and trace._duration_s is None:
             val = _resolve_dot_path(trace.metadata, duration_field)
             if val is not None:
-                trace._duration_s = float(val)
+                trace._duration_s = _safe_float(val)
 
 
 def _classify_outcome(val) -> str | None:
@@ -609,3 +615,29 @@ def _classify_outcome(val) -> str | None:
     if val_str in _FAILURE_VALUES:
         return OUTCOME_FAILURE
     return None
+
+
+def _safe_float(val) -> float | None:
+    """Convert to float, rejecting NaN and Infinity."""
+    if val is None:
+        return None
+    try:
+        res = float(val)
+        if math.isnan(res) or math.isinf(res):
+            return None
+        return res
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_int(val) -> int | None:
+    """Convert to int, rejecting NaN and Infinity and handling Float overflow."""
+    if val is None:
+        return None
+    try:
+        res = float(val)
+        if math.isnan(res) or math.isinf(res):
+            return None
+        return int(res)
+    except (ValueError, TypeError, OverflowError):
+        return None

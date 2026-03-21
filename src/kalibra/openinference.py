@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kalibra.loader import _iso_to_ns
+from kalibra.loader import _iso_to_ns, _safe_float, _safe_int
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS, Span, Trace
 
 
@@ -301,25 +301,6 @@ def _normalize_status(raw) -> str:
         return _OTEL_STATUS_MAP.get(raw, "")
     return str(raw).upper()
 
-
-def _safe_float(val) -> float | None:
-    """Convert to float, returning None if absent or unconvertible."""
-    if val is None:
-        return None
-    try:
-        return float(val)
-    except (ValueError, TypeError):
-        return None
-
-
-def _safe_int(val) -> int | None:
-    """Convert to int, returning None if absent or unconvertible."""
-    if val is None:
-        return None
-    try:
-        return int(float(val))  # handles "500" and 500.0
-    except (ValueError, TypeError):
-        return None
 
 
 def _to_span(raw: dict) -> Span:

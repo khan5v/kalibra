@@ -24,7 +24,7 @@ Threshold fields:
 from __future__ import annotations
 
 from kalibra.metrics import ComparisonMetric, Direction, Observation
-from kalibra.metrics._stats import bootstrap_ci, median, pct_delta
+from kalibra.metrics._stats import bootstrap_ci, median, pct_delta, two_proportion_ztest
 from kalibra.model import Span, Trace
 
 # CLT heuristic: below 30 occurrences, per-span medians and delta
@@ -112,11 +112,21 @@ class SpanBreakdownMetric(ComparisonMetric):
                 else:
                     has_improvement = True
 
-            # Error rate has no CI — use fixed 1pp threshold.
-            if err_delta_pp > 1.0:
-                has_regression = True
-            elif err_delta_pp < -1.0:
-                has_improvement = True
+            # Error rate: two-proportion z-test (same approach as success_rate
+            # and error_rate metrics). Fixed threshold alone is unreliable
+            # for small span counts.
+            b_errors = sum(1 for s in b_spans if s.error)
+            c_errors = sum(1 for s in c_spans if s.error)
+            if b_count > 0 and c_count > 0 and (b_errors + c_errors) > 0:
+                _, err_pval = two_proportion_ztest(
+                    b_count, b_errors, c_count, c_errors,
+                )
+                err_significant = err_pval < 0.05
+                if err_significant and abs(err_delta_pp) > 1.0:
+                    if err_delta_pp > 0:
+                        has_regression = True
+                    else:
+                        has_improvement = True
 
             span_warning = None
             if small < _MIN_SPAN_COUNT:
