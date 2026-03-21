@@ -24,7 +24,7 @@ Threshold fields:
 from __future__ import annotations
 
 from kalibra.metrics import ComparisonMetric, Direction, Observation
-from kalibra.metrics._stats import median, pct_delta
+from kalibra.metrics._stats import bootstrap_ci, median, pct_delta
 from kalibra.model import Span, Trace
 
 # CLT heuristic: below 30 occurrences, per-span medians and delta
@@ -72,8 +72,13 @@ class SpanBreakdownMetric(ComparisonMetric):
 
             small = min(b_count, c_count)
 
-            b_stats = _span_stats(b_spans)
-            c_stats = _span_stats(c_spans)
+            b_stats, b_raw = _span_stats(b_spans)
+            c_stats, c_raw = _span_stats(c_spans)
+
+            # Bootstrap CIs on duration and tokens (the dimensions with enough data).
+            dur_ci = bootstrap_ci(b_raw["durations"], c_raw["durations"])
+            tok_ci = bootstrap_ci(b_raw["tokens"], c_raw["tokens"])
+            cost_ci = bootstrap_ci(b_raw["costs"], c_raw["costs"])
 
             # Compute deltas. Lower is better for all dimensions.
             # pct_delta returns None when base=0 and curr!=0 (undefined %).
@@ -84,19 +89,34 @@ class SpanBreakdownMetric(ComparisonMetric):
             err_delta_pp = c_stats["error_rate"] - b_stats["error_rate"]
 
             threshold = self.noise_threshold
-            d = dur_delta or 0
-            co = cost_delta or 0
-            tk = tok_delta or 0
 
-            # Check each dimension independently.
-            has_regression = (
-                d > threshold or co > threshold
-                or tk > threshold or err_delta_pp > 1.0
-            )
-            has_improvement = (
-                d < -threshold or co < -threshold
-                or tk < -threshold or err_delta_pp < -1.0
-            )
+            # Check each dimension independently, matching _classify logic:
+            # 1. If CI includes zero → not significant → skip this dimension.
+            # 2. If abs(delta) <= noise threshold → too small to matter → skip.
+            # 3. Otherwise → regressed (delta > 0) or improved (delta < 0).
+            # Lower is better for all dimensions (duration, cost, tokens).
+            has_regression = False
+            has_improvement = False
+
+            for delta, ci in [
+                (dur_delta or 0, dur_ci),
+                (cost_delta or 0, cost_ci),
+                (tok_delta or 0, tok_ci),
+            ]:
+                if ci is not None and ci[0] <= 0 <= ci[1]:
+                    continue  # CI includes zero — not significant
+                if abs(delta) <= threshold:
+                    continue  # Below noise threshold
+                if delta > 0:
+                    has_regression = True
+                else:
+                    has_improvement = True
+
+            # Error rate has no CI — use fixed 1pp threshold.
+            if err_delta_pp > 1.0:
+                has_regression = True
+            elif err_delta_pp < -1.0:
+                has_improvement = True
 
             span_warning = None
             if small < _MIN_SPAN_COUNT:
@@ -113,6 +133,11 @@ class SpanBreakdownMetric(ComparisonMetric):
                     "cost_pct": cost_delta or 0,
                     "tokens_pct": tok_delta or 0,
                     "error_rate_pp": round(err_delta_pp, 1),
+                },
+                "ci_95": {
+                    "duration": dur_ci,
+                    "tokens": tok_ci,
+                    "cost": cost_ci,
                 },
                 "warning": span_warning,
             }
@@ -140,6 +165,10 @@ class SpanBreakdownMetric(ComparisonMetric):
         n_reg = len(regressions)
         n_imp = len(improvements)
         n_mix = len(mixed)
+        # Mixed spans have at least one regressed dimension — count them
+        # toward regressions for gate purposes. A span that doubles in cost
+        # but gets slightly faster should still trigger span_regressions.
+        n_reg_for_gate = n_reg + n_mix
 
         if n_reg > 0 and n_imp > 0:
             direction = Direction.INCONCLUSIVE
@@ -166,13 +195,14 @@ class SpanBreakdownMetric(ComparisonMetric):
                 "n_regressions": n_reg,
                 "n_improvements": n_imp,
                 "n_mixed": n_mix,
+                "n_regressions_for_gate": n_reg_for_gate,
                 "per_span": per_span,
             },
         )
 
     def threshold_fields(self, result: Observation) -> dict[str, float]:
         return {
-            "span_regressions": float(result.metadata.get("n_regressions", 0)),
+            "span_regressions": float(result.metadata.get("n_regressions_for_gate", 0)),
             "span_improvements": float(result.metadata.get("n_improvements", 0)),
         }
 
@@ -189,16 +219,21 @@ def _group_spans(traces: list[Trace]) -> dict[str, list[Span]]:
     return groups
 
 
-def _span_stats(spans: list[Span]) -> dict:
-    """Compute median stats for a list of spans with the same name."""
+def _span_stats(spans: list[Span]) -> tuple[dict, dict]:
+    """Compute median stats for a list of spans with the same name.
+
+    Returns (stats_dict, raw_dict) — raw values needed for bootstrap CI.
+    """
     durations = [s.duration_s for s in spans if s.duration_s > 0]
     costs = [s.cost for s in spans if s.cost is not None]
     tokens = [float(s.total_tokens) for s in spans if s.total_tokens is not None]
     errors = sum(1 for s in spans if s.error)
     total = len(spans)
-    return {
+    stats = {
         "median_duration": median(durations),
         "median_cost": median(costs),
         "median_tokens": median(tokens),
         "error_rate": round(errors / total * 100, 1) if total else 0,
     }
+    raw = {"durations": durations, "costs": costs, "tokens": tokens}
+    return stats, raw

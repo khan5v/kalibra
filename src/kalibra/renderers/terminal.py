@@ -482,31 +482,52 @@ def _format_span_breakdown_details(obs: Observation) -> list[str]:
         b = entry.get("baseline", {})
         c = entry.get("current", {})
         deltas = entry.get("deltas", {})
+        cis = entry.get("ci_95", {})
+
+        # Collect dimension lines for tabulation.
+        dim_lines: list[tuple[str, str, str]] = []  # (values, delta, ci)
 
         if b.get("median_duration") or c.get("median_duration"):
             sign = "+" if deltas.get("duration_pct", 0) >= 0 else ""
-            details.append(
-                f"  {b['median_duration']:.1f}s → {c['median_duration']:.1f}s duration"
-                f"  {sign}{deltas.get('duration_pct', 0):.0f}%"
-            )
+            ci = cis.get("duration")
+            dim_lines.append((
+                f"{b['median_duration']:.1f}s → {c['median_duration']:.1f}s duration",
+                f"{sign}{deltas.get('duration_pct', 0):.0f}%",
+                f"CI [{ci[0]:+.0f}%, {ci[1]:+.0f}%]" if ci else "",
+            ))
         if b.get("median_cost") or c.get("median_cost"):
             sign = "+" if deltas.get("cost_pct", 0) >= 0 else ""
-            details.append(
-                f"  ${b['median_cost']:.4f} → ${c['median_cost']:.4f} cost"
-                f"  {sign}{deltas.get('cost_pct', 0):.0f}%"
-            )
+            ci = cis.get("cost")
+            dim_lines.append((
+                f"${b['median_cost']:.4f} → ${c['median_cost']:.4f} cost",
+                f"{sign}{deltas.get('cost_pct', 0):.0f}%",
+                f"CI [{ci[0]:+.0f}%, {ci[1]:+.0f}%]" if ci else "",
+            ))
         if b.get("median_tokens") or c.get("median_tokens"):
             sign = "+" if deltas.get("tokens_pct", 0) >= 0 else ""
-            details.append(
-                f"  {b['median_tokens']:,.0f} → {c['median_tokens']:,.0f} tokens"
-                f"  {sign}{deltas.get('tokens_pct', 0):.0f}%"
-            )
+            ci = cis.get("tokens")
+            dim_lines.append((
+                f"{b['median_tokens']:,.0f} → {c['median_tokens']:,.0f} tokens",
+                f"{sign}{deltas.get('tokens_pct', 0):.0f}%",
+                f"CI [{ci[0]:+.0f}%, {ci[1]:+.0f}%]" if ci else "",
+            ))
         if b.get("error_rate") or c.get("error_rate"):
             sign = "+" if deltas.get("error_rate_pp", 0) >= 0 else ""
-            details.append(
-                f"  err {b['error_rate']:.0f}% → {c['error_rate']:.0f}%"
-                f"  {sign}{deltas.get('error_rate_pp', 0):.1f} pp"
-            )
+            dim_lines.append((
+                f"err {b['error_rate']:.0f}% → {c['error_rate']:.0f}%",
+                f"{sign}{deltas.get('error_rate_pp', 0):.1f} pp",
+                "",
+            ))
+
+        # Align columns: values padded to max width, then delta, then CI.
+        if dim_lines:
+            val_width = max(len(v) for v, _, _ in dim_lines)
+            delta_width = max(len(d) for _, d, _ in dim_lines)
+            for val, delta, ci in dim_lines:
+                line = f"  {val:<{val_width}}  {delta:>{delta_width}}"
+                if ci:
+                    line += f"  {ci}"
+                details.append(line)
 
         details.append(f"  n={b.get('count', 0)} → {c.get('count', 0)} spans")
 
