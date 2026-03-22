@@ -231,6 +231,12 @@ The [tutorial notebook](https://github.com/khan5v/kalibra/blob/main/examples/pho
 
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb)
 
+## CrewAI
+
+The [CrewAI tutorial](https://github.com/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb) shows two scenarios where `crewai test` quality scores look fine but Kalibra catches operational regressions — failure redistribution and cost explosion. No API key needed.
+
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb)
+
 ## Development
 
 ```bash
