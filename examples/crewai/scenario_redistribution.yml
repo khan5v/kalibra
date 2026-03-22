@@ -1,0 +1,18 @@
+# Scenario 1: Redistribution
+# Aggregate success rate is identical (80% → 80%).
+# But WHICH tasks fail shifted completely.
+
+sources:
+  baseline:
+    path: examples/crewai/scenario_redistribution.jsonl
+    where: [variant == baseline]
+  current:
+    path: examples/crewai/scenario_redistribution.jsonl
+    where: [variant == current]
+
+baseline: baseline
+current: current
+fields:
+  task_id: task.id
+require:
+  - regressions <= 0

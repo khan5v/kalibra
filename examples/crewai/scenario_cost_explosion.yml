@@ -1,0 +1,19 @@
+# Scenario 2: Cost explosion
+# Success improved (75% → 97.5%). Looks great!
+# But tokens doubled. The model is being verbose.
+
+sources:
+  baseline:
+    path: examples/crewai/scenario_cost_explosion.jsonl
+    where: [variant == baseline]
+  current:
+    path: examples/crewai/scenario_cost_explosion.jsonl
+    where: [variant == current]
+
+baseline: baseline
+current: current
+fields:
+  task_id: task.id
+require:
+  - token_delta_pct <= 20
+  - regressions <= 0

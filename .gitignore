@@ -21,3 +21,5 @@ config/showcase/
 !src/kalibra/demo_data/*.jsonl
 output/
 *_live.jsonl
+examples/crewai/traces_raw.jsonl
+.ipynb_checkpoints/

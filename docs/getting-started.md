@@ -24,6 +24,8 @@ For a deeper walkthrough — loading real multi-step agent traces, splitting by 
 
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb)
 
+For CrewAI users: the [CrewAI tutorial](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb) shows two scenarios where `crewai test` quality scores look fine but Kalibra catches failure redistribution and cost explosion.
+
 ## Compare your own data
 
 ```bash
