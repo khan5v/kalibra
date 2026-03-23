@@ -7,91 +7,27 @@
   <a href="https://pypi.org/project/kalibra/"><img src="https://img.shields.io/pypi/v/kalibra" alt="PyPI"></a>
   <a href="https://pypi.org/project/kalibra/"><img src="https://img.shields.io/pypi/pyversions/kalibra" alt="Python"></a>
   <a href="https://github.com/khan5v/kalibra/LICENSE"><img src="https://img.shields.io/github/license/khan5v/kalibra" alt="License"></a>
+  <a href="https://kalibra.cc"><img src="https://img.shields.io/badge/docs-kalibra.cc-blue" alt="Docs"></a>
 </p>
+
+<p align="center">
+  <img src="docs/assets/readme-demo.png" alt="Kalibra catching a hidden regression — success rate flat at 80%, but 2 task types regressed" width="700">
+</p>
+
+Success rate: 80% → 80%. Duration: flat. Tokens: flat. Everything looks the same — but 2 task types that always passed started failing, and 2 that always failed started passing. The aggregate hid it. The [per-task breakdown caught it](/blog/kalibra-regression-detection/).
 
 ---
 
-You change a prompt, swap a model, or refactor a tool — did the agent get better or worse?
-
-Kalibra compares two populations of traces and tells you, with statistical rigor, what changed — success rate, cost, latency, tokens, per-task regressions, per-span breakdowns. Two dependencies. One command.
-
 ```bash
 pip install kalibra
-kalibra demo
+kalibra compare baseline.jsonl current.jsonl -v
+kalibra demo    # try it with sample data
 ```
 
-```
-  Kalibra Compare
-  ──────────────────────────────────────────────────────────
-  Baseline       100 traces   (baseline.jsonl)
-  Current        100 traces   (current.jsonl)
-  Direction ~ MIXED
-
-  Trace metrics
-
-  ▲ Success rate      50.0% → 75.0%  +25.0 pp   (p=0.000)
-  ▲ Cost              $0.0358 → $0.0213 median  -40.5%
-  ▼ Duration          7.6s → 15.2s median  +99.1%
-  ≈ Steps             4 → 4 steps/trace (median)  +0.0%
-  ▼ Error rate        0.2% → 4.3%  +4.1 pp
-  ≈ Token usage       7,746 → 7,738 tokens/trace (median)  -0.1%
-  ≈ Token efficiency  8,443 → 7,090 tokens/success (median)  -16.0%
-  ▲ Cost / quality    $0.0385 → $0.0189 per success (median)  -51.0%
-
-  Trace breakdown
-
-  ~ Per trace         20 matched — ✓ 10 improved, ✗ 5 regressed
-
-  Span breakdown
-
-  ▼ Per span          5 matched — ✗ 1 regressed, ~ 4 mixed
-
-  ──────────────────────────────────────────────────────────
-  ~ MIXED — no quality gates configured
-```
-
-Add `-v` for per-task outcome changes, per-span breakdowns, and confidence intervals.
-
-## Why Kalibra
-
-Aggregate metrics hide task-level regressions. Your success rate went up — but the agent got better at simple high-volume tasks while silently breaking on a critical subset. The cost dropped because broken tasks stopped making expensive tool calls. Every number improved. The agent got worse. Kalibra catches this.
-
-- **10 metrics** — success rate, cost, duration, steps, error rate, tokens, token efficiency, cost/quality, per-task breakdown, per-span breakdown
-- **Statistical rigor** — bootstrap 95% CIs on continuous metrics, two-proportion z-test on rates, noise thresholds to ignore jitter
-- **Quality gates** — `require: success_rate_delta >= -5` fails your CI pipeline (exit 1) when thresholds are violated
-- **Any JSONL** — flat traces, nested spans, non-standard field names. Use `--suggest` to auto-detect field mappings
-- **Three output formats** — terminal (human), markdown (PR comments), JSON (automation)
-- **Two dependencies** — click + pyyaml. No ML frameworks, no API keys
-
-## Quickstart
-
-**1. Install**
-
-```bash
-pip install kalibra
-```
-
-**2. Try the demo**
-
-```bash
-kalibra demo
-```
-
-This creates a `kalibra-demo/` directory with sample traces and runs a comparison. Afterwards:
-
-```bash
-kalibra compare kalibra-demo/baseline.jsonl kalibra-demo/current.jsonl -v
-```
-
-**3. Compare your own data**
-
-If your fields don't match the defaults, let Kalibra figure it out:
-
-```bash
-kalibra inspect your-traces.jsonl --suggest
-```
-
-This scans your data and prints a copy-pasteable compare command with the right `--outcome`, `--cost`, `--trace-id` flags.
+- **Statistical rigor** — bootstrap 95% CIs on continuous metrics, two-proportion z-test on rates
+- **Quality gates** — `regressions <= 2` fails your CI pipeline (exit 1) when thresholds are violated
+- **Per-task and per-span breakdown** — catches regressions that cancel out in the aggregate
+- **Two dependencies** — click + pyyaml. No ML frameworks, no API keys, no LLM calls
 
 ## Quality gates for CI
 
@@ -106,7 +42,6 @@ require:
   - success_rate_delta >= -2     # max 2pp success rate drop
   - regressions <= 5             # max 5 tasks regressed
   - cost_delta_pct <= 20         # max 20% cost increase
-  - span_regressions <= 3        # max 3 span types regressed
 ```
 
 ```bash
@@ -149,34 +84,22 @@ jobs:
 
 </details>
 
-## Field mapping
+## Integrations
 
-Kalibra works with any JSONL shape. Map your fields in config or on the command line:
+### Phoenix / OpenInference
 
-```yaml
-# kalibra.yml
-fields:
-  outcome: metadata.result
-  cost: agent_cost.total_cost
-  task_id: metadata.task_name
-```
+Kalibra auto-detects trace exports from [Phoenix](https://github.com/Arize-ai/phoenix). No field mapping needed.
 
-```bash
-kalibra compare a.jsonl b.jsonl --outcome metadata.result --cost usage.total_cost
-```
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb) Interactive tutorial — works without an API key.
 
-Comparing files with different schemas? Override fields per source:
+### CrewAI
 
-```yaml
-baseline:
-  path: ./langfuse.jsonl
-  fields: { outcome: metadata.result, cost: usage.total_cost }
-current:
-  path: ./braintrust.jsonl
-  fields: { outcome: scores.correctness, cost: metrics.cost }
-```
+Two scenarios where `crewai test` scores look fine but Kalibra catches operational regressions.
 
-## Filtering with `where`
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb) CrewAI tutorial — failure redistribution and cost explosion.
+
+<details>
+<summary>Filtering with <code>where</code></summary>
 
 Split a single trace file into populations using Prometheus-style matchers:
 
@@ -194,7 +117,39 @@ sources:
 
 Operators: `==` (equal), `!=` (not equal), `=~` (regex match), `!~` (regex not match). Multiple matchers are ANDed. Traces missing the field are excluded.
 
-## Python API
+</details>
+
+<details>
+<summary>Field mapping</summary>
+
+Kalibra works with any JSONL shape. Map your fields in config or on the command line:
+
+```yaml
+fields:
+  outcome: metadata.result
+  cost: agent_cost.total_cost
+  task_id: metadata.task_name
+```
+
+```bash
+kalibra compare a.jsonl b.jsonl --outcome metadata.result --cost usage.total_cost
+```
+
+Override fields per source for different schemas:
+
+```yaml
+baseline:
+  path: ./langfuse.jsonl
+  fields: { outcome: metadata.result, cost: usage.total_cost }
+current:
+  path: ./braintrust.jsonl
+  fields: { outcome: scores.correctness, cost: metrics.cost }
+```
+
+</details>
+
+<details>
+<summary>Python API</summary>
 
 ```python
 from kalibra.loader import load_traces
@@ -209,33 +164,7 @@ print(render(result, "terminal", verbose=True))
 print("passed:", result.passed)
 ```
 
-## Commands
-
-```
-kalibra compare [a.jsonl b.jsonl]     Compare traces — flags, config, or positional args
-kalibra compare -v                    Verbose — CIs, per-task/per-span detail
-kalibra compare --format markdown     Markdown for PR comments
-kalibra compare --format json         Machine-readable JSON
-kalibra compare --metrics             List all threshold fields
-kalibra inspect traces.jsonl          Show data coverage and fields
-kalibra inspect traces.jsonl --suggest  Auto-detect field mappings
-kalibra init                          Create kalibra.yml interactively
-kalibra demo                          Run comparison on built-in sample data
-```
-
-## Phoenix / OpenInference
-
-Kalibra auto-detects trace exports from [Phoenix](https://github.com/Arize-ai/phoenix). No field mapping needed.
-
-The [tutorial notebook](https://github.com/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb) walks through a full example — works without an API key using pre-recorded traces.
-
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb)
-
-## CrewAI
-
-The [CrewAI tutorial](https://github.com/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb) shows two scenarios where `crewai test` quality scores look fine but Kalibra catches operational regressions — failure redistribution and cost explosion. No API key needed.
-
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb)
+</details>
 
 ## Development
 
