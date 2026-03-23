@@ -35,6 +35,7 @@ def run_compare(
     duration_field: str | None = None,
     verbose: bool = False,
     quiet: bool = False,
+    trace_format: str | None = None,
 ) -> None:
     """Execute the compare command."""
     from kalibra.config import CompareConfig, find_config
@@ -132,12 +133,16 @@ def run_compare(
     b_fields = config.fields.merge(b_pop.fields if b_pop else None)
     c_fields = config.fields.merge(c_pop.fields if c_pop else None)
 
+    # Resolve trace format: CLI flag > per-population config > auto.
+    b_fmt = trace_format or (b_pop.format if b_pop else None) or "auto"
+    c_fmt = trace_format or (c_pop.format if c_pop else None) or "auto"
+
     try:
         _status(f"Loading {baseline_path}", out_format, quiet)
-        b_traces = load_traces(baseline_path, fields=b_fields)
+        b_traces = load_traces(baseline_path, fields=b_fields, format=b_fmt)
 
         _status(f"Loading {current_path}", out_format, quiet)
-        c_traces = load_traces(current_path, fields=c_fields)
+        c_traces = load_traces(current_path, fields=c_fields, format=c_fmt)
     except ValueError as exc:
         display.load_error(baseline_path, str(exc))
         raise SystemExit(1) from None

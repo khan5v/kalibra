@@ -123,6 +123,7 @@ class PopulationConfig:
     path: str | None = None
     fields: FieldsConfig | None = None
     where: list[Matcher] = dc_field(default_factory=list)
+    format: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict | None) -> PopulationConfig | None:
@@ -135,6 +136,7 @@ class PopulationConfig:
             path=data.get("path"),
             fields=FieldsConfig.from_dict(fields_data) if fields_data else None,
             where=matchers,
+            format=data.get("format"),
         )
 
 

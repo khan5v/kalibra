@@ -74,12 +74,14 @@ def init(force):
               help="Show detailed output — per-span breakdown, CIs, p-values.")
 @click.option("-q", "--quiet", is_flag=True, default=False,
               help="Suppress status messages (config discovery, loading). CI-friendly.")
+@click.option("--trace-format", "trace_format", default=None,
+              help="Trace file format: auto (default), openinference, otel-genai, flat.")
 @click.option("--metrics", "show_metrics", is_flag=True, default=False,
               help="List all available metrics and their --require threshold fields, then exit.")
 def compare(files, baseline, current, out_format, require, config_path,
             output, trace_id_field, outcome, cost_field,
             task_id, input_tokens_field, output_tokens_field, duration_field,
-            verbose, quiet, show_metrics):
+            verbose, quiet, trace_format, show_metrics):
     """Compare two trace datasets — regression detection, statistical diff.
 
     \b
@@ -119,6 +121,7 @@ def compare(files, baseline, current, out_format, require, config_path,
         output_tokens_field=output_tokens_field,
         duration_field=duration_field,
         verbose=verbose, quiet=quiet,
+        trace_format=trace_format,
     )
 
 

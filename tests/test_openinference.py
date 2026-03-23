@@ -8,17 +8,15 @@ from pathlib import Path
 import pytest
 
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
-from kalibra.openinference import (
+from kalibra.loaders._utils import _safe_float, _safe_int
+from kalibra.loaders.openinference import (
     _extract_finish_reason,
     _flatten_attrs,
     _group_spans,
     _normalize_status,
     _resolve_attr,
-    _safe_float,
-    _safe_int,
     _to_span,
     is_openinference,
-    load_openinference_json,
     load_openinference_jsonl,
 )
 
@@ -598,23 +596,6 @@ class TestLoadJsonl:
         assert len(traces) == 2
 
 
-# ── JSON array loader integration ────────────────────────────────────────────
-
-class TestLoadJsonArray:
-    def test_load_from_array(self):
-        data = [
-            _span(trace_id="t1", span_id="s1"),
-            _span(trace_id="t1", span_id="s2", parent_id="s1"),
-        ]
-        traces = load_openinference_json(data)
-        assert len(traces) == 1
-        assert len(traces[0].spans) == 2
-
-    def test_empty_array(self):
-        traces = load_openinference_json([])
-        assert traces == []
-
-
 # ── Integration via load_traces (auto-detection) ────────────────────────────
 
 class TestAutoDetection:
@@ -639,19 +620,6 @@ class TestAutoDetection:
         # Cost/tokens come from the LLM span.
         assert traces[0].total_cost == pytest.approx(0.01)
         assert traces[0].total_tokens == 150
-
-    def test_json_array_autodetect(self, tmp_path):
-        """OpenInference JSON array is auto-detected by load_traces."""
-        from kalibra.loader import load_traces
-        data = [
-            _span(trace_id="t1", span_id="root"),
-            _span(trace_id="t1", span_id="child", parent_id="root"),
-        ]
-        p = tmp_path / "traces.json"
-        p.write_text(json.dumps(data))
-        traces = load_traces(str(p))
-        assert len(traces) == 1
-        assert len(traces[0].spans) == 2
 
 
 # ── Leaf spans and tree aggregation ──────────────────────────────────────────

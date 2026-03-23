@@ -63,7 +63,5 @@ OpenInference exports are flat arrays of spans — one span per line, each carry
 | Format | Auto-detected | Notes |
 |--------|--------------|-------|
 | Phoenix JSONL export (`get_spans()`) | Yes | Nested or dot-flattened attributes |
-| Phoenix JSON array export | Yes | Same detection logic |
 | Flat Kalibra JSONL (one trace per line) | Yes | Default format, no OpenInference needed |
-| Nested OTel (child_spans trees) | Yes | JSON array format |
 

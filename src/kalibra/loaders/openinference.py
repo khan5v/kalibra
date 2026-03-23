@@ -1,14 +1,10 @@
-"""OpenInference loader — converts Phoenix/Arize trace exports to Kalibra Traces.
+"""OpenInference format — converts Phoenix/Arize trace exports to Kalibra Traces.
 
 OpenInference is a set of attribute conventions on top of OpenTelemetry,
 maintained by Arize AI. Phoenix exports traces as flat span arrays
-(JSON array or JSONL, one span per line) with attributes like:
+(JSONL, one span per line) with attributes like:
 
     llm.token_count.prompt, llm.cost.total, openinference.span.kind
-
-This module detects and parses both export formats:
-- JSON array of spans
-- JSONL with one span per line
 
 Assumption: each span carries its own cost/token values, not aggregated
 subtotals of children. This follows the OpenInference convention.
@@ -19,8 +15,27 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kalibra.loader import _iso_to_ns, _safe_float, _safe_int
+from kalibra.loaders import TraceFormat
+from kalibra.loaders._utils import _iso_to_ns, _safe_float, _safe_int
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS, Span, Trace
+
+
+class OpenInferenceFormat(TraceFormat):
+    """OpenInference/Phoenix trace format (flat span arrays with context.trace_id)."""
+
+    name = "openinference"
+
+    def detect(self, item: dict) -> bool:
+        return is_openinference(item)
+
+    def load(self, path: Path) -> list[Trace]:
+        return load_openinference_jsonl(path)
+
+
+# ── Detection ────────────────────────────────────────────────────────────────
+
+_OI_SPAN_KINDS = {"LLM", "TOOL", "CHAIN", "AGENT", "RETRIEVER",
+                   "RERANKER", "EMBEDDING", "GUARDRAIL", "EVALUATOR"}
 
 
 def is_openinference(item: dict) -> bool:
@@ -39,20 +54,14 @@ def is_openinference(item: dict) -> bool:
     if "trace_id" not in context:
         return False
 
-    _OI_SPAN_KINDS = {"LLM", "TOOL", "CHAIN", "AGENT", "RETRIEVER",
-                       "RERANKER", "EMBEDDING", "GUARDRAIL", "EVALUATOR"}
-
     # Strong signal: recognized OpenInference span kind.
-    # Top-level span_kind (Phoenix JSONL format).
     if item.get("span_kind") in _OI_SPAN_KINDS:
         return True
 
     attrs = item.get("attributes")
     if isinstance(attrs, dict):
-        # Dot-flattened key.
         if attrs.get("openinference.span.kind") in _OI_SPAN_KINDS:
             return True
-        # Nested dict: attributes.openinference.span.kind
         oi = attrs.get("openinference")
         if isinstance(oi, dict):
             span = oi.get("span")
@@ -60,18 +69,14 @@ def is_openinference(item: dict) -> bool:
                 return True
 
     # Structural signal: context has both trace_id and span_id,
-    # and parent_id is a known key (even if None). This triple is
-    # the fingerprint of an OpenInference/OTel span export.
+    # and parent_id is a known key (even if None).
     if "span_id" in context and "parent_id" in item:
         return True
 
     return False
 
 
-def load_openinference_json(data: list[dict]) -> list[Trace]:
-    """Load traces from a JSON array of OpenInference spans."""
-    return _group_spans(data)
-
+# ── Loading ──────────────────────────────────────────────────────────────────
 
 def load_openinference_jsonl(path: Path) -> list[Trace]:
     """Load OpenInference spans from JSONL (one span per line)."""
@@ -95,7 +100,6 @@ def load_openinference_jsonl(path: Path) -> list[Trace]:
 
 def _group_spans(raw_spans: list[dict]) -> list[Trace]:
     """Group flat OpenInference spans by trace_id and build Traces."""
-    # Group spans by trace_id.
     trace_groups: dict[str, list[dict]] = {}
     for item in raw_spans:
         if not isinstance(item, dict):
@@ -118,23 +122,10 @@ def _group_spans(raw_spans: list[dict]) -> list[Trace]:
                 if root is None:
                     root = s
                 else:
-                    # Multiple roots — pick earliest start time.
                     if (s.get("start_time") or "") < (root.get("start_time") or ""):
                         root = s
 
         # Determine outcome from span statuses.
-        #
-        # Priority:
-        # 1. LLM finish reason from any LLM span's output.value.
-        #    The root may be a CHAIN/AGENT with no output.value —
-        #    the actual LLM completions live on child spans.
-        #    If ANY LLM span was truncated/filtered, the trace failed.
-        # 2. OTel status_code on root span (fallback).
-        #
-        # OTel status_code "OK" just means the API call succeeded, NOT
-        # that the model completed its answer. A truncated response is
-        # status_code "OK" but finish_reason "max_tokens" — that's a
-        # failure for quality purposes.
         outcome = None
         has_finish = False
         has_failure = False
@@ -150,7 +141,6 @@ def _group_spans(raw_spans: list[dict]) -> list[Trace]:
         if has_finish:
             outcome = OUTCOME_FAILURE if has_failure else OUTCOME_SUCCESS
         elif root is not None:
-            # Fall back to OTel status code on root.
             code = _normalize_status(root.get("status_code"))
             if not code:
                 status = root.get("status") or {}
@@ -175,9 +165,6 @@ def _group_spans(raw_spans: list[dict]) -> list[Trace]:
             )
             if span_kind:
                 metadata["span_kind"] = span_kind
-            # Preserve non-standard attributes for field mapping.
-            # Exclude llm.*, openinference.*, input.*, output.* — these
-            # are either already parsed or large text blobs.
             flat: dict = {}
             _flatten_attrs(attrs, "", flat)
             _SKIP_PREFIXES = ("llm.", "openinference.", "input.", "output.")
@@ -196,23 +183,6 @@ def _group_spans(raw_spans: list[dict]) -> list[Trace]:
 
 
 # ── LLM finish reason extraction ──────────────────────────────────────────────
-#
-# Neither OpenInference nor OpenTelemetry GenAI conventions define a
-# standard attribute for LLM completion reason (e.g. "stop", "length",
-# "max_tokens"). The raw provider response is stored as a JSON string
-# in the output.value attribute, and each provider uses a different
-# field name and value set:
-#
-#   Anthropic:  stop_reason   ("end_turn", "max_tokens", "tool_use")
-#   OpenAI:     choices[0].finish_reason  ("stop", "length", "tool_calls")
-#   Google:     candidates[0].finishReason  ("STOP", "MAX_TOKENS", "SAFETY")
-#
-# This is a best-effort parser for the three major providers. It
-# normalizes their values to: "complete", "truncated", "tool_call",
-# "filtered", or None (unknown/absent).
-#
-# Provider response formats are subject to change — update the maps
-# and extraction logic when they do.
 
 _ANTHROPIC_REASON_MAP = {
     "end_turn": "complete",
@@ -239,15 +209,7 @@ _GOOGLE_REASON_MAP = {
 
 
 def _extract_finish_reason(attrs: dict) -> str | None:
-    """Best-effort extraction of LLM completion reason from output.value.
-
-    There is no standard attribute for this in OpenInference or OTel
-    GenAI conventions. Each provider embeds the reason in their own
-    response format inside output.value. This function parses the JSON
-    for Anthropic, OpenAI, and Google, and normalizes to a common set.
-
-    Returns: "complete", "truncated", "tool_call", "filtered", or None.
-    """
+    """Best-effort extraction of LLM completion reason from output.value."""
     output_raw = _resolve_attr(attrs, "output.value")
     if not output_raw or not isinstance(output_raw, str):
         return None
@@ -291,10 +253,6 @@ _OTEL_STATUS_MAP = {0: "", 1: "OK", 2: "ERROR"}
 
 
 def _normalize_status(raw) -> str:
-    """Normalize OTel status code to uppercase string.
-
-    Handles: "OK", "ERROR", "Ok", 1, 2, etc.
-    """
     if raw is None:
         return ""
     if isinstance(raw, int):
@@ -302,26 +260,18 @@ def _normalize_status(raw) -> str:
     return str(raw).upper()
 
 
-
 def _to_span(raw: dict) -> Span:
-    """Convert a single OpenInference span dict to a Kalibra Span.
-
-    Handles two common export layouts:
-    - Phoenix JSONL: top-level span_kind, status_code, nested attrs
-    - JSON array: status.status_code, dot-flattened attrs
-    """
+    """Convert a single OpenInference span dict to a Kalibra Span."""
     context = raw.get("context") or {}
     attrs = raw.get("attributes") or {}
 
-    # Span identity.
     span_id = str(context.get("span_id") or "")
     parent_id = raw.get("parent_id")
-    if not parent_id:  # Normalize both None and "" to None
+    if not parent_id:
         parent_id = None
     else:
         parent_id = str(parent_id)
 
-    # Name: use span name, fall back to span kind.
     span_kind = (
         raw.get("span_kind")
         or _resolve_attr(attrs, "openinference.span.kind")
@@ -329,35 +279,25 @@ def _to_span(raw: dict) -> Span:
     )
     name = raw.get("name") or span_kind
 
-    # Timing: ISO 8601 timestamps.
     start_ns = _iso_to_ns(raw.get("start_time", ""))
     end_ns = _iso_to_ns(raw.get("end_time", ""))
 
-    # Tokens (OpenInference convention).
-    # Prefer prompt+completion breakdown. Fall back to total if neither exists.
     raw_in = _resolve_attr(attrs, "llm.token_count.prompt")
     raw_out = _resolve_attr(attrs, "llm.token_count.completion")
     if raw_in is None and raw_out is None:
         raw_total = _resolve_attr(attrs, "llm.token_count.total")
         if raw_total is not None:
-            # Only total available — assign to output (conservative:
-            # total without breakdown is better than losing the data).
             raw_out = raw_total
 
-    # Cost (OpenInference convention).
     raw_cost = _resolve_attr(attrs, "llm.cost.total")
-
-    # Model.
     model = _resolve_attr(attrs, "llm.model_name")
 
-    # Error status — top-level or nested.
     status_code = _normalize_status(raw.get("status_code"))
     if not status_code:
         status = raw.get("status") or {}
         status_code = _normalize_status(status.get("status_code"))
     is_error = status_code == "ERROR"
 
-    # Flatten attributes for metadata.
     flat_attrs: dict = {}
     _flatten_attrs(attrs, "", flat_attrs)
 
@@ -377,16 +317,9 @@ def _to_span(raw: dict) -> Span:
 
 
 def _resolve_attr(attrs: dict, dot_path: str):
-    """Resolve an OpenInference attribute by dot-path.
-
-    Handles both layouts:
-    - Dot-flattened: attrs["llm.token_count.prompt"]
-    - Nested dicts:  attrs["llm"]["token_count"]["prompt"]
-    """
-    # Try flat key first.
+    """Resolve an OpenInference attribute by dot-path."""
     if dot_path in attrs:
         return attrs[dot_path]
-    # Try nested traversal.
     parts = dot_path.split(".")
     current = attrs
     for part in parts:
@@ -405,5 +338,3 @@ def _flatten_attrs(obj: dict, prefix: str, out: dict) -> None:
             _flatten_attrs(v, key, out)
         elif v is not None and not isinstance(v, list):
             out[key] = v
-
-
