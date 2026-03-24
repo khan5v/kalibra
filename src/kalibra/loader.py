@@ -35,8 +35,10 @@ def _get_loaders():
     global _ALL_FORMATS, _FORMAT_MAP
     if _ALL_FORMATS is None:
         from kalibra.loaders.openinference import OpenInferenceLoader
+        from kalibra.loaders.otel_genai import OTelGenAILoader
         from kalibra.loaders.flat import FlatLoader
-        _ALL_FORMATS = [OpenInferenceLoader()]
+        # Detection order: OpenInference first (strongest signals), then OTel GenAI.
+        _ALL_FORMATS = [OpenInferenceLoader(), OTelGenAILoader()]
         _FORMAT_MAP = {f.name: f for f in _ALL_FORMATS}
         _FORMAT_MAP["flat"] = FlatLoader()
     return _ALL_FORMATS, _FORMAT_MAP
@@ -85,37 +87,44 @@ def load_traces(
             _apply_fields(traces, fields)
         return traces
 
-    # Auto-detect: peek at first JSONL line, try each format, fall back to flat.
-    first_item = _peek_first_item(p)
-    if first_item is not None:
-        for fmt in all_formats:
-            if fmt.detect(first_item):
-                traces = fmt.load(p)
-                if fields:
-                    _apply_fields(traces, fields)
-                return traces
+    # Auto-detect: peek at first N items. The first span in a trace export
+    # may be a generic root with no format-specific attributes (e.g. HTTP
+    # wrapper). Checking multiple spans ensures format detection finds a
+    # span with strong signals.
+    sample = _peek_items(p, max_items=100)
+    for fmt in all_formats:
+        if any(fmt.detect(item) for item in sample):
+            traces = fmt.load(p)
+            if fields:
+                _apply_fields(traces, fields)
+            return traces
 
-    # Fallback: flat JSONL.
+    # Fallback: flat JSONL. If the file is actually OTel but format-specific
+    # attributes only appear after the first 100 items, auto-detect misses it.
+    # Use --trace-format to select explicitly in that case.
     traces = _load_flat_jsonl(p, trace_id_field)
     if fields:
         _apply_fields(traces, fields)
     return traces
 
 
-def _peek_first_item(path: Path) -> dict | None:
-    """Read the first valid JSON object from a JSONL file."""
+def _peek_items(path: Path, max_items: int = 100) -> list[dict]:
+    """Read up to max_items valid JSON objects from a JSONL file for detection."""
+    items: list[dict] = []
     with open(path) as f:
         for line in f:
+            if len(items) >= max_items:
+                break
             line = line.strip()
             if not line:
                 continue
             try:
                 row = json.loads(line)
                 if isinstance(row, dict):
-                    return row
+                    items.append(row)
             except json.JSONDecodeError:
                 pass
-    return None
+    return items
 
 
 # ── Field mapping (post-load, format-agnostic) ──────────────────────────────

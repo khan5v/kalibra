@@ -16,7 +16,16 @@ import json
 from pathlib import Path
 
 from kalibra.loaders import TraceLoader
-from kalibra.loaders._utils import _iso_to_ns, _safe_float, _safe_int
+from kalibra.loaders._utils import (
+    _find_root_span,
+    _flatten_dict,
+    _group_by_trace_id,
+    _iso_to_ns,
+    _normalize_status,
+    _resolve_attr,
+    _safe_float,
+    _safe_int,
+)
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS, Span, Trace
 
 
@@ -41,12 +50,11 @@ _OI_SPAN_KINDS = {"LLM", "TOOL", "CHAIN", "AGENT", "RETRIEVER",
 def is_openinference(item: dict) -> bool:
     """Check if a JSON object looks like an OpenInference span.
 
-    Detection uses two signals, in order:
-    1. Strong: recognized span_kind (top-level, dot-flattened, or nested).
-    2. Structural: context.trace_id + context.span_id + parent_id key.
-       This catches spans with UNKNOWN or None span_kind, which appear
-       in real Phoenix exports. Regular Kalibra JSONL never has a nested
-       context dict, so this is a safe discriminator.
+    Requires a recognized OpenInference span_kind — either as a top-level
+    field, a dot-flattened attribute, or a nested attribute. The loader
+    peeks at multiple items (not just the first), so spans with UNKNOWN
+    kind are fine as long as at least one span in the sample has a
+    recognized kind.
     """
     context = item.get("context")
     if not isinstance(context, dict):
@@ -54,24 +62,21 @@ def is_openinference(item: dict) -> bool:
     if "trace_id" not in context:
         return False
 
-    # Strong signal: recognized OpenInference span kind.
+    # Top-level span_kind (Phoenix JSONL format).
     if item.get("span_kind") in _OI_SPAN_KINDS:
         return True
 
     attrs = item.get("attributes")
     if isinstance(attrs, dict):
+        # Dot-flattened key.
         if attrs.get("openinference.span.kind") in _OI_SPAN_KINDS:
             return True
+        # Nested dict: attributes.openinference.span.kind
         oi = attrs.get("openinference")
         if isinstance(oi, dict):
             span = oi.get("span")
             if isinstance(span, dict) and span.get("kind") in _OI_SPAN_KINDS:
                 return True
-
-    # Structural signal: context has both trace_id and span_id,
-    # and parent_id is a known key (even if None).
-    if "span_id" in context and "parent_id" in item:
-        return True
 
     return False
 
@@ -100,30 +105,11 @@ def load_openinference_jsonl(path: Path) -> list[Trace]:
 
 def _group_spans(raw_spans: list[dict]) -> list[Trace]:
     """Group flat OpenInference spans by trace_id and build Traces."""
-    trace_groups: dict[str, list[dict]] = {}
-    for item in raw_spans:
-        if not isinstance(item, dict):
-            continue
-        context = item.get("context")
-        if not isinstance(context, dict):
-            continue
-        trace_id = str(context.get("trace_id") or "")
-        if not trace_id:
-            continue
-        trace_groups.setdefault(trace_id, []).append(item)
+    trace_groups = _group_by_trace_id(raw_spans)
 
     traces: list[Trace] = []
     for trace_id, spans_raw in trace_groups.items():
-        # Find root span (no parent_id).
-        root = None
-        for s in spans_raw:
-            pid = s.get("parent_id")
-            if pid is None or pid == "":
-                if root is None:
-                    root = s
-                else:
-                    if (s.get("start_time") or "") < (root.get("start_time") or ""):
-                        root = s
+        root = _find_root_span(spans_raw)
 
         # Determine outcome from span statuses.
         outcome = None
@@ -166,7 +152,7 @@ def _group_spans(raw_spans: list[dict]) -> list[Trace]:
             if span_kind:
                 metadata["span_kind"] = span_kind
             flat: dict = {}
-            _flatten_attrs(attrs, "", flat)
+            _flatten_dict(attrs, "", flat)
             _SKIP_PREFIXES = ("llm.", "openinference.", "input.", "output.")
             for k, v in flat.items():
                 if not any(k.startswith(p) for p in _SKIP_PREFIXES):
@@ -248,18 +234,6 @@ def _extract_finish_reason(attrs: dict) -> str | None:
     return None
 
 
-# OTel status codes: 0=UNSET, 1=OK, 2=ERROR.
-_OTEL_STATUS_MAP = {0: "", 1: "OK", 2: "ERROR"}
-
-
-def _normalize_status(raw) -> str:
-    if raw is None:
-        return ""
-    if isinstance(raw, int):
-        return _OTEL_STATUS_MAP.get(raw, "")
-    return str(raw).upper()
-
-
 def _to_span(raw: dict) -> Span:
     """Convert a single OpenInference span dict to a Kalibra Span."""
     context = raw.get("context") or {}
@@ -299,7 +273,7 @@ def _to_span(raw: dict) -> Span:
     is_error = status_code == "ERROR"
 
     flat_attrs: dict = {}
-    _flatten_attrs(attrs, "", flat_attrs)
+    _flatten_dict(attrs, "", flat_attrs)
 
     return Span(
         span_id=span_id,
@@ -316,25 +290,3 @@ def _to_span(raw: dict) -> Span:
     )
 
 
-def _resolve_attr(attrs: dict, dot_path: str):
-    """Resolve an OpenInference attribute by dot-path."""
-    if dot_path in attrs:
-        return attrs[dot_path]
-    parts = dot_path.split(".")
-    current = attrs
-    for part in parts:
-        if isinstance(current, dict) and part in current:
-            current = current[part]
-        else:
-            return None
-    return current
-
-
-def _flatten_attrs(obj: dict, prefix: str, out: dict) -> None:
-    """Flatten nested OpenInference attributes to dot-notation."""
-    for k, v in obj.items():
-        key = f"{prefix}.{k}" if prefix else k
-        if isinstance(v, dict):
-            _flatten_attrs(v, key, out)
-        elif v is not None and not isinstance(v, list):
-            out[key] = v

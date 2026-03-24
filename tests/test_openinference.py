@@ -8,13 +8,16 @@ from pathlib import Path
 import pytest
 
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
-from kalibra.loaders._utils import _safe_float, _safe_int
-from kalibra.loaders.openinference import (
-    _extract_finish_reason,
-    _flatten_attrs,
-    _group_spans,
+from kalibra.loaders._utils import (
+    _flatten_dict,
     _normalize_status,
     _resolve_attr,
+    _safe_float,
+    _safe_int,
+)
+from kalibra.loaders.openinference import (
+    _extract_finish_reason,
+    _group_spans,
     _to_span,
     is_openinference,
     load_openinference_jsonl,
@@ -92,25 +95,27 @@ class TestIsOpenInference:
         item["attributes"] = {}
         assert is_openinference(item) is False
 
-    def test_structural_detection_unknown_kind(self):
-        """UNKNOWN span_kind still detected via structural signal."""
+    def test_unknown_kind_not_detected_per_span(self):
+        """UNKNOWN span_kind is NOT detected on a per-span basis.
+        Multi-peek detection handles this at the file level instead —
+        other spans in the sample will have recognized span_kinds."""
         item = {
             "context": {"trace_id": "t1", "span_id": "s1"},
             "span_kind": "UNKNOWN",
             "parent_id": None,
             "attributes": {},
         }
-        assert is_openinference(item) is True
+        assert is_openinference(item) is False
 
-    def test_structural_detection_null_kind(self):
-        """None span_kind still detected via structural signal."""
+    def test_null_kind_not_detected_per_span(self):
+        """None span_kind is NOT detected on a per-span basis."""
         item = {
             "context": {"trace_id": "t1", "span_id": "s1"},
             "span_kind": None,
             "parent_id": None,
             "attributes": {},
         }
-        assert is_openinference(item) is True
+        assert is_openinference(item) is False
 
     def test_rejects_no_structural_signals(self):
         """No span_kind, no span_id in context, no parent_id → not OI."""
@@ -528,22 +533,22 @@ class TestSafeConversions:
         assert _safe_int("nope") is None
 
 
-# ── _flatten_attrs ───────────────────────────────────────────────────────────
+# ── _flatten_dict ───────────────────────────────────────────────────────────
 
 class TestFlattenAttrs:
     def test_flat_passthrough(self):
         out = {}
-        _flatten_attrs({"a": 1, "b": "x"}, "", out)
+        _flatten_dict({"a": 1, "b": "x"}, "", out)
         assert out == {"a": 1, "b": "x"}
 
     def test_nested(self):
         out = {}
-        _flatten_attrs({"a": {"b": {"c": 42}}}, "", out)
+        _flatten_dict({"a": {"b": {"c": 42}}}, "", out)
         assert out == {"a.b.c": 42}
 
     def test_skips_none_and_lists(self):
         out = {}
-        _flatten_attrs({"a": None, "b": [1, 2], "c": 3}, "", out)
+        _flatten_dict({"a": None, "b": [1, 2], "c": 3}, "", out)
         assert out == {"c": 3}
 
 

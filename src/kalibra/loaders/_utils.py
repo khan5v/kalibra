@@ -90,11 +90,84 @@ def _flatten_dict(d: dict, prefix: str, out: dict) -> None:
     to add it.
     """
     for k, v in d.items():
-        key = f"{prefix}.{k}"
+        key = f"{prefix}.{k}" if prefix else k
         if isinstance(v, dict):
-            _flatten_dict(v, prefix=key, out=out)
+            _flatten_dict(v, key, out)
         elif v is not None and not isinstance(v, list):
             out[key] = v
+
+
+def _group_by_trace_id(raw_spans: list[dict]) -> dict[str, list[dict]]:
+    """Group flat OTel spans by context.trace_id.
+
+    Skips non-dict items and items without a valid context.trace_id.
+    Shared by all OTel-based loaders (OpenInference, OTel GenAI).
+    """
+    groups: dict[str, list[dict]] = {}
+    for item in raw_spans:
+        if not isinstance(item, dict):
+            continue
+        context = item.get("context")
+        if not isinstance(context, dict):
+            continue
+        trace_id = str(context.get("trace_id") or "")
+        if not trace_id:
+            continue
+        groups.setdefault(trace_id, []).append(item)
+    return groups
+
+
+def _find_root_span(spans: list[dict]) -> dict | None:
+    """Find the root span (no parent_id) from a list of spans in one trace.
+
+    If multiple roots exist, picks the one with the earliest start_time.
+    Spans missing start_time are deprioritized (not chosen over spans with timestamps).
+    """
+    root = None
+    for s in spans:
+        pid = s.get("parent_id")
+        if pid is None or pid == "":
+            if root is None:
+                root = s
+            else:
+                s_time = s.get("start_time") or ""
+                root_time = root.get("start_time") or ""
+                # Only prefer s over root if s has a real timestamp that's earlier,
+                # or if root has no timestamp but s does.
+                if s_time and (not root_time or s_time < root_time):
+                    root = s
+    return root
+
+
+def _resolve_attr(attrs: dict, dot_path: str):
+    """Resolve an attribute by dot-path, handling both flat and nested layouts.
+
+    Tries flat key first (attrs["gen_ai.usage.input_tokens"]),
+    then nested traversal (attrs["gen_ai"]["usage"]["input_tokens"]).
+    """
+    if dot_path in attrs:
+        return attrs[dot_path]
+    parts = dot_path.split(".")
+    current = attrs
+    for part in parts:
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return None
+    return current
+
+
+# OTel status codes: 0=UNSET, 1=OK, 2=ERROR.
+_OTEL_STATUS_MAP = {0: "", 1: "OK", 2: "ERROR"}
+
+
+def _normalize_status(raw) -> str:
+    """Normalize OTel status code to uppercase string."""
+    if raw is None:
+        return ""
+    if isinstance(raw, int):
+        return _OTEL_STATUS_MAP.get(raw, "")
+    return str(raw).upper()
 
 
 def _auto_parse_json_strings(obj):

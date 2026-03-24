@@ -58,6 +58,8 @@ OpenInference exports are flat arrays of spans — one span per line, each carry
 5. **Computes duration** as wall-clock time (`max(end) - min(start)`), not sum of span durations
 6. **Parses finish reason** from `llm.output_messages` attributes or the `output.value` JSON (`stop_reason` for Anthropic, `finish_reason` for OpenAI/Google) — used by the `error_rate` and `success_rate` metrics to detect truncation and errors
 
+For a deep dive on how span tree aggregation works (and why naive token summing double-counts), see [The span tree double-counting problem](https://orekhov.work/posts/span-tree-aggregation/).
+
 ## What's detected
 
 | Format | Auto-detected | Notes |
