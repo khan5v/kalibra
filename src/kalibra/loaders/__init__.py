@@ -1,4 +1,4 @@
-"""Trace format registry — pluggable loaders for different trace formats."""
+"""Trace loader registry — pluggable loaders for different trace formats."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 from kalibra.model import Trace
 
 
-class TraceFormat:
+class TraceLoader:
     """Base class for trace format loaders.
 
     Each subclass handles one trace format (OpenInference, OTel GenAI, etc.).
@@ -23,3 +23,7 @@ class TraceFormat:
     def load(self, path: Path) -> list[Trace]:
         """Load traces from a JSONL file in this format."""
         raise NotImplementedError
+
+
+# Backward compat alias — external code may reference TraceFormat.
+TraceFormat = TraceLoader

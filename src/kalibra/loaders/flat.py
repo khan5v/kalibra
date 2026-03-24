@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kalibra.loaders import TraceFormat
+from kalibra.loaders import TraceLoader
 from kalibra.loaders._utils import (
     _auto_parse_json_strings,
     _classify_outcome,
@@ -30,7 +30,7 @@ from kalibra.loaders._utils import (
 from kalibra.model import Span, Trace
 
 
-class FlatFormat(TraceFormat):
+class FlatLoader(TraceLoader):
     """Kalibra's built-in flat JSONL format (one trace per line)."""
 
     name = "flat"

@@ -9,15 +9,15 @@ import yaml
 from click.testing import CliRunner
 
 from kalibra.cli import main
-from kalibra.loaders import TraceFormat
-from kalibra.loaders.openinference import OpenInferenceFormat
-from kalibra.loaders.flat import FlatFormat
+from kalibra.loaders import TraceLoader
+from kalibra.loaders.openinference import OpenInferenceLoader
+from kalibra.loaders.flat import FlatLoader
 from kalibra.loader import load_traces
 
 
 class TestFormatClasses:
     def test_openinference_detects_phoenix_span(self):
-        fmt = OpenInferenceFormat()
+        fmt = OpenInferenceLoader()
         item = {
             "context": {"trace_id": "abc", "span_id": "def"},
             "parent_id": None,
@@ -26,18 +26,18 @@ class TestFormatClasses:
         assert fmt.detect(item) is True
 
     def test_openinference_rejects_flat_trace(self):
-        fmt = OpenInferenceFormat()
+        fmt = OpenInferenceLoader()
         item = {"trace_id": "abc", "outcome": "success", "cost": 0.01}
         assert fmt.detect(item) is False
 
     def test_flat_never_detects(self):
-        fmt = FlatFormat()
+        fmt = FlatLoader()
         assert fmt.detect({"anything": "at all"}) is False
         assert fmt.detect({}) is False
 
     def test_format_names(self):
-        assert OpenInferenceFormat().name == "openinference"
-        assert FlatFormat().name == "flat"
+        assert OpenInferenceLoader().name == "openinference"
+        assert FlatLoader().name == "flat"
 
 
 class TestExplicitFormat:
@@ -191,7 +191,7 @@ class TestWrongFormatErrors:
         assert len(traces) >= 1  # loads something, doesn't crash
 
 
-class TestTraceFormatViaCLI:
+class TestTraceLoaderViaCLI:
     @pytest.fixture()
     def sample_data(self, tmp_path):
         path = tmp_path / "traces.jsonl"

@@ -25,20 +25,20 @@ _ALL_FORMATS = None
 _FORMAT_MAP = None
 
 
-def _get_formats():
-    """Lazy-initialize the format registry (avoids circular imports at module level).
+def _get_loaders():
+    """Lazy-initialize the loader registry (avoids circular imports at module level).
 
-    Detection order matters: first match wins. Formats must check for
+    Detection order matters: first match wins. Loaders must check for
     mutually exclusive signals (e.g. openinference.span.kind vs gen_ai.*).
-    FlatFormat is the fallback — it never participates in auto-detection.
+    FlatLoader is the fallback — it never participates in auto-detection.
     """
     global _ALL_FORMATS, _FORMAT_MAP
     if _ALL_FORMATS is None:
-        from kalibra.loaders.openinference import OpenInferenceFormat
-        from kalibra.loaders.flat import FlatFormat
-        _ALL_FORMATS = [OpenInferenceFormat()]
+        from kalibra.loaders.openinference import OpenInferenceLoader
+        from kalibra.loaders.flat import FlatLoader
+        _ALL_FORMATS = [OpenInferenceLoader()]
         _FORMAT_MAP = {f.name: f for f in _ALL_FORMATS}
-        _FORMAT_MAP["flat"] = FlatFormat()
+        _FORMAT_MAP["flat"] = FlatLoader()
     return _ALL_FORMATS, _FORMAT_MAP
 
 
@@ -64,7 +64,7 @@ def load_traces(
     Returns:
         List of Trace objects.
     """
-    all_formats, format_map = _get_formats()
+    all_formats, format_map = _get_loaders()
 
     # Resolve trace_id_field from fields config or explicit arg.
     if fields and hasattr(fields, "trace_id") and fields.trace_id:

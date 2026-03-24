@@ -15,12 +15,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from kalibra.loaders import TraceFormat
+from kalibra.loaders import TraceLoader
 from kalibra.loaders._utils import _iso_to_ns, _safe_float, _safe_int
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS, Span, Trace
 
 
-class OpenInferenceFormat(TraceFormat):
+class OpenInferenceLoader(TraceLoader):
     """OpenInference/Phoenix trace format (flat span arrays with context.trace_id)."""
 
     name = "openinference"
