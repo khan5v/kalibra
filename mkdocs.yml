@@ -33,6 +33,8 @@ nav:
   - Getting Started: getting-started.md
   - Integrations:
     - Phoenix / OpenInference: phoenix.md
+    - OTel GenAI: otel-genai.md
+    - CrewAI: crewai.md
 
 plugins:
   - search

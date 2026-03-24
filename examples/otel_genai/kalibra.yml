@@ -1,0 +1,19 @@
+sources:
+  baseline:
+    path: examples/otel_genai/traces.jsonl
+    where:
+      - variant == baseline
+  current:
+    path: examples/otel_genai/traces.jsonl
+    where:
+      - variant == current
+
+baseline: baseline
+current: current
+
+fields:
+  task_id: task.id
+
+require:
+  - token_delta_pct <= -10
+  - regressions <= 2

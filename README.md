@@ -86,17 +86,13 @@ jobs:
 
 ## Integrations
 
-### Phoenix / OpenInference
+Kalibra auto-detects trace formats. Each tutorial works without an API key.
 
-Kalibra auto-detects trace exports from [Phoenix](https://github.com/Arize-ai/phoenix). No field mapping needed.
-
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb) Interactive tutorial — works without an API key.
-
-### CrewAI
-
-Two scenarios where `crewai test` scores look fine but Kalibra catches operational regressions.
-
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb) CrewAI tutorial — failure redistribution and cost explosion.
+| Integration | Trace format | Demo scenario | Tutorial |
+|---|---|---|---|
+| **Phoenix / OpenInference** | `llm.*`, `openinference.*` | Multi-step agent with span tree aggregation | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb) |
+| **OTel GenAI** (Langfuse, Datadog, PydanticAI) | `gen_ai.*` | Truncation regression hidden by aggregate improvement | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/otel_genai/otel_genai_tutorial.ipynb) |
+| **CrewAI** | Flat JSONL | Failure redistribution and cost explosion | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb) |
 
 <details>
 <summary>Filtering with <code>where</code></summary>

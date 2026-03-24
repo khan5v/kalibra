@@ -18,17 +18,15 @@ This creates a `kalibra-demo/` directory with sample traces and runs an interact
 kalibra compare kalibra-demo/baseline.jsonl kalibra-demo/current.jsonl -v
 ```
 
-## Try the tutorial
+## Interactive tutorials
 
-For a deeper walkthrough — loading real multi-step agent traces, splitting by tags, and seeing how aggregate metrics hide regressions — try the interactive notebook. Run a live agent with your Anthropic key, or explore instantly with pre-recorded traces.
+Each notebook works without an API key using pre-recorded traces. All Kalibra analysis runs identically.
 
-**Phoenix / OpenInference** — trace a multi-step agent, split by tags, see how aggregates hide regressions:
-
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb)
-
-**CrewAI** — two scenarios where `crewai test` scores look fine but Kalibra catches failure redistribution and cost explosion:
-
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb)
+| Integration | Trace format | Demo scenario | Tutorial |
+|---|---|---|---|
+| **Phoenix / OpenInference** | `llm.*`, `openinference.*` | Multi-step agent with span tree aggregation | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb) |
+| **OTel GenAI** (Langfuse, Datadog, PydanticAI) | `gen_ai.*` | Truncation regression hidden by aggregate improvement | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/otel_genai/otel_genai_tutorial.ipynb) |
+| **CrewAI** | Flat JSONL | Failure redistribution and cost explosion | [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb) |
 
 ## Compare your own data
 
@@ -42,7 +40,24 @@ If your JSONL uses non-standard field names, let Kalibra figure it out:
 kalibra inspect your-traces.jsonl --suggest
 ```
 
-This scans your data and prints a copy-pasteable compare command with the right `--outcome`, `--cost`, `--trace-id` flags.
+This scans your data and prints metric readiness, field coverage, and a copy-pasteable compare command:
+
+```
+  Metric readiness
+    ✓ Outcome          200/200 traces
+    ✗ Cost               0/200 traces
+    ✓ Tokens           200/200 traces
+    ✓ Duration         200/200 traces
+
+  Suggested field mappings
+    ★ gen_ai.usage.input_tokens
+    ★ gen_ai.usage.output_tokens
+
+  Option 1 — quick compare with flags:
+      kalibra compare traces.jsonl <current.jsonl> \
+      --input-tokens gen_ai.usage.input_tokens \
+      --output-tokens gen_ai.usage.output_tokens
+```
 
 ## Set up quality gates
 
@@ -65,6 +80,8 @@ require:
   - regressions <= 5
   - cost_delta_pct <= 20
 ```
+
+Run `kalibra compare --metrics` to see all available gate fields — `token_delta_pct`, `duration_delta_pct`, `span_regressions`, and more.
 
 Then:
 
@@ -116,4 +133,4 @@ jobs:
           config: kalibra.yml
 ```
 
-The action posts a markdown report as a PR comment and exits 1 if any gate fails.
+The [`kalibra-action`](https://github.com/khan5v/kalibra-action) posts a markdown report as a PR comment and exits 1 if any gate fails.
