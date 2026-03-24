@@ -22,9 +22,13 @@ kalibra compare kalibra-demo/baseline.jsonl kalibra-demo/current.jsonl -v
 
 For a deeper walkthrough — loading real multi-step agent traces, splitting by tags, and seeing how aggregate metrics hide regressions — try the interactive notebook. Run a live agent with your Anthropic key, or explore instantly with pre-recorded traces.
 
+**Phoenix / OpenInference** — trace a multi-step agent, split by tags, see how aggregates hide regressions:
+
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/phoenix_kalibra_tutorial.ipynb)
 
-For CrewAI users: the [CrewAI tutorial](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb) shows two scenarios where `crewai test` quality scores look fine but Kalibra catches failure redistribution and cost explosion.
+**CrewAI** — two scenarios where `crewai test` scores look fine but Kalibra catches failure redistribution and cost explosion:
+
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/crewai/crewai_kalibra_tutorial.ipynb)
 
 ## Compare your own data
 
