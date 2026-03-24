@@ -17,9 +17,9 @@ theme:
     code: JetBrains Mono
   features:
     - navigation.instant
-    - navigation.tabs
     - navigation.sections
     - navigation.top
+    - navigation.expand
     - search.suggest
     - content.code.copy
   icon:
@@ -31,7 +31,8 @@ extra_css:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - Phoenix / OpenInference: phoenix.md
+  - Integrations:
+    - Phoenix / OpenInference: phoenix.md
 
 plugins:
   - search
