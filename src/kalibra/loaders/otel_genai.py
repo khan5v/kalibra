@@ -1,7 +1,7 @@
 """OTel GenAI format — OpenTelemetry gen_ai.* semantic conventions.
 
-Loads traces from platforms that emit the official OpenTelemetry GenAI
-semantic conventions (Langfuse, Datadog, PydanticAI/Logfire, OpenLLMetry).
+Loads traces from any exporter that preserves standard gen_ai.* span
+attributes. Validated with opentelemetry-instrumentation-openai-v2.
 
 Attributes use the gen_ai.* namespace:
     gen_ai.usage.input_tokens, gen_ai.usage.output_tokens,

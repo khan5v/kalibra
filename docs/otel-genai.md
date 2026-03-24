@@ -1,6 +1,6 @@
 # OTel GenAI
 
-Kalibra auto-detects [OTel GenAI](https://opentelemetry.io/docs/specs/semconv/gen-ai/) traces — any JSONL with `gen_ai.*` attributes from `opentelemetry-instrumentation-openai-v2`, PydanticAI / Logfire, Langfuse, Datadog, OpenLLMetry, or any OTel-native setup. No field mapping needed — just export your spans and compare.
+Kalibra auto-detects [OTel GenAI](https://opentelemetry.io/docs/specs/semconv/gen-ai/) traces — any JSONL with `gen_ai.*` attributes. Validated with `opentelemetry-instrumentation-openai-v2`. Compatible with any exporter that preserves standard `gen_ai.*` span attributes. No field mapping needed — just export your spans and compare.
 
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/khan5v/kalibra/blob/main/examples/otel_genai/otel_genai_tutorial.ipynb) Try the interactive tutorial — uses pre-recorded traces, no API key needed.
 
@@ -92,13 +92,18 @@ OTel GenAI exports are flat arrays of spans — one span per line, each carrying
 
 ## Platform compatibility
 
-| Platform | `gen_ai.*` attributes | Notes |
-|----------|----------------------|-------|
-| `opentelemetry-instrumentation-openai-v2` | Yes | Standard OTel instrumentor for OpenAI |
-| PydanticAI / Logfire | Yes | Native OTel GenAI support |
-| Langfuse | Yes | May include custom cost attributes |
-| Datadog | Yes | `dd-trace` with GenAI support |
-| OpenLLMetry | Yes | Multi-provider auto-instrumentation |
+Kalibra works with any exporter that preserves `gen_ai.*` span attributes in JSONL. Platforms adopting the OTel GenAI semantic conventions include:
+
+| Platform | Expected `gen_ai.*` support | Notes |
+|----------|---------------------------|-------|
+| `opentelemetry-instrumentation-openai-v2` | **Validated** | What the tutorial traces use |
+| PydanticAI / Logfire | Expected | Built on OTel |
+| Langfuse | Expected | May include custom cost attributes — map via `fields.cost` |
+| Datadog LLM Observability | Expected | Uses `gen_ai.*` conventions |
+| OpenLLMetry (Traceloop) | Expected | OTel-based auto-instrumentation |
+
+!!! note
+    "Expected" means the platform uses OTel GenAI conventions based on their documentation, but Kalibra has not been tested against their specific JSONL export format. If you encounter issues, please [open an issue](https://github.com/khan5v/kalibra/issues).
 
 ## What's detected
 
