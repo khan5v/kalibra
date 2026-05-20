@@ -1,5 +1,13 @@
 # Getting Started
 
+## If you're coming from…
+
+- **Phoenix / Arize** — keep using Phoenix for tracing. Export spans with `client.spans.get_spans()` to JSONL, then `kalibra compare` two exports. Auto-detected, no field mapping. See [Phoenix integration](phoenix.md).
+- **LangSmith** — export traces as JSONL (any shape). Use `kalibra inspect --suggest` to print field mappings, then add them to `kalibra.yml`.
+- **Braintrust** — Braintrust gives you scores; Kalibra gives you a statistical diff between two runs. Map `scores.<name>` to `outcome` and `metrics.cost` to `cost` in `kalibra.yml`.
+- **Langfuse** — `gen_ai.*` attributes are auto-detected. Cost attributes vary by exporter — see [OTel GenAI](otel-genai.md) for the mapping.
+- **Ad-hoc scripts and notebooks** — your existing JSONL is probably enough. Run `kalibra inspect your-file.jsonl --suggest` and paste the suggested command.
+
 ## Install
 
 ```bash

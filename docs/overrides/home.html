@@ -3,117 +3,200 @@
 {% block tabs %}
 {{ super() }}
 
-<section class="kali-hero">
-  <h1>You changed the prompt.<br>Did it <span class="accent">actually</span> get better?</h1>
-  <p class="sub">
-    Catches the regressions that aggregate metrics hide.
+<div class="k2">
+
+<section class="hero">
+  <div class="fade-in">
+    <span class="eyebrow"><span class="dot"></span> v0.2.2 · MIT · 2 dependencies</span>
+  </div>
+  <h1 class="headline fade-in d1">
+    The diff tool for <span class="accent">AI agent runs</span>.
+  </h1>
+  <p class="sub fade-in d2">
+    Kalibra is the CLI that catches what the dashboard misses. Compare two trace files. Get a statistical verdict. Exit 1 when something regressed.
   </p>
-  <div class="ctas">
-    <a class="cta-p" href="getting-started/">Get Started</a>
-    <a class="cta-s" href="https://github.com/khan5v/kalibra">GitHub</a>
-  </div>
-
-  <div class="kali-term">
-    <div class="kali-term-bar">
-      <div class="kali-dot r"></div>
-      <div class="kali-dot y"></div>
-      <div class="kali-dot g"></div>
-      <span class="term-title">Terminal</span>
+  <div class="cta-row fade-in d3" id="install">
+    <div class="install-chip">
+      <span class="prompt">$</span>
+      <span>pip install kalibra</span>
+      <span class="copy" onclick="navigator.clipboard.writeText('pip install kalibra')">copy</span>
     </div>
-    <div class="kali-term-body"><span class="t-h">Kalibra Compare</span>
-<span class="t-d">──────────────────────────────────────────────────────────</span>
-<span class="t-w">Baseline</span>       <span class="t-w">100 traces</span>   <span class="t-w">(baseline.jsonl)</span>
-<span class="t-w">Current</span>        <span class="t-w">100 traces</span>   <span class="t-w">(current.jsonl)</span>
-<span class="t-w">Gates</span>         <span class="t-r">✗ 1/2 failed</span>
-
-<span class="t-g">▲</span> <span class="t-w">Success rate</span>      50.0% → 75.0%  <span class="t-g">+25.0 pp</span>
-<span class="t-g">▲</span> <span class="t-w">Cost</span>              $0.036 → $0.021 median  <span class="t-g">-40.5%</span>
-<span class="t-r">▼</span> <span class="t-w">Duration</span>          7.6s → 15.2s median  <span class="t-r">+99.1%</span>
-<span class="t-r">▼</span> <span class="t-w">Error rate</span>        0.2% → 4.3%  <span class="t-r">+4.1 pp</span>
-
-<span class="t-w">Trace breakdown</span>
-<span class="t-c">~</span> <span class="t-w">Per trace</span>         20 matched — <span class="t-g">✓ 10 improved</span>, <span class="t-r">✗ 5 regressed</span>
-
-<span class="t-w">Quality gates</span>
-  [<span class="t-g"> OK </span>] success_rate_delta >= -5
-  [<span class="t-r">FAIL</span>] duration_delta_pct <= 30
-
-<span class="t-d">──────────────────────────────────────────────────────────</span>
-<span class="t-r">FAILED — quality gate violation (exit code 1)</span></div>
+    <a class="btn-secondary" href="https://github.com/khan5v/kalibra">View on GitHub →</a>
   </div>
 </section>
 
-<!-- ── THE STORY: what just happened ── -->
-<section class="kali-insights">
-  <div class="insight-card">
-    <div class="insight-num"><span class="t-g">+25pp</span></div>
-    <div class="insight-body">
-      <h3>The aggregate looks great</h3>
-      <p>Success rate up, cost down. Every dashboard would green-light this deploy.</p>
+<!-- ── DIFF VISUALIZATION ── -->
+<section class="diff-section" id="how">
+  <div class="diff-grid">
+    <div class="file">
+      <div class="file-head">
+        <span class="file-name">baseline.jsonl</span>
+        <span class="file-tag">main</span>
+      </div>
+      <div class="row"><span class="k">traces</span><span class="v">100</span></div>
+      <div class="row"><span class="k">success rate</span><span class="v">50.0%</span></div>
+      <div class="row"><span class="k">cost (median)</span><span class="v">$0.036</span></div>
+      <div class="row"><span class="k">duration (median)</span><span class="v">7.6s</span></div>
     </div>
-  </div>
-  <div class="insight-card">
-    <div class="insight-num"><span class="t-r">5/5 → 0/5</span></div>
-    <div class="insight-body">
-      <h3>Five tasks completely broke</h3>
-      <p>Per-task breakdown reveals them. New easy tasks masked the damage in the average.</p>
-    </div>
-  </div>
-  <div class="insight-card">
-    <div class="insight-num"><span class="t-r">+99%</span></div>
-    <div class="insight-body">
-      <h3>Duration doubled</h3>
-      <p>The quality gate caught it. Exit code 1. Deploy blocked.</p>
-    </div>
-  </div>
-</section>
 
-<!-- ── KEY CAPABILITIES — weighted, not flat ── -->
-<section class="kali-capabilities">
-  <div class="cap-primary">
-    <div class="cap-card cap-big">
-      <h3>Per-task regression detection</h3>
-      <p>Groups traces by task ID and compares success rates. Finds the 5 tasks that broke even when the aggregate improved. The thing dashboards don't show you.</p>
+    <div class="arrow">→</div>
+
+    <div class="file">
+      <div class="file-head">
+        <span class="file-name">current.jsonl</span>
+        <span class="file-tag">PR #482</span>
+      </div>
+      <div class="row"><span class="k">traces</span><span class="v">100</span></div>
+      <div class="row"><span class="k">success rate</span><span class="v">75.0%</span></div>
+      <div class="row"><span class="k">cost (median)</span><span class="v">$0.021</span></div>
+      <div class="row"><span class="k">duration (median)</span><span class="v">15.2s</span></div>
     </div>
-    <div class="cap-card cap-big">
-      <h3>Statistical significance, not just deltas</h3>
-      <p>Bootstrap confidence intervals and z-tests on every metric. Separates real changes from random variance.</p>
-    </div>
-  </div>
-  <div class="cap-secondary">
-    <div class="cap-card">
-      <h3>Quality gates</h3>
-      <p>Exit 1 on violation. Markdown PR comments. <a href="https://github.com/khan5v/kalibra-action">GitHub Action</a> included.</p>
-    </div>
-    <div class="cap-card">
-      <h3>Any JSONL</h3>
-      <p>Flat or nested. <code>--suggest</code> scans field names and gives you a config.</p>
-    </div>
-    <div class="cap-card">
-      <h3>Deterministic</h3>
-      <p>Same data, same results. No LLM-as-judge.</p>
-    </div>
-    <div class="cap-card">
-      <h3>Lightweight</h3>
-      <p>2 deps. No API keys. Installs in seconds.</p>
+
+    <div class="verdict">
+      <div class="verdict-head">
+        <div class="dots"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div></div>
+        <span class="title">$ kalibra compare baseline.jsonl current.jsonl</span>
+      </div>
+      <div class="verdict-body">
+        <span class="header line">Kalibra Compare</span>
+        <span class="sep line">──────────────────────────────────────────────────────────</span>
+        <span class="line"><span class="ok">▲</span> <span class="label">Success rate</span>      50.0% → 75.0%   <span class="ok">+25.0 pp</span></span>
+        <span class="line"><span class="ok">▲</span> <span class="label">Cost</span>              $0.036 → $0.021 <span class="ok">−40.5%</span></span>
+        <span class="line"><span class="bad">▼</span> <span class="label">Duration</span>          7.6s → 15.2s    <span class="bad">+99.1%</span></span>
+        <span class="line">&nbsp;</span>
+        <span class="line"><span class="label">Trace breakdown</span>  20 matched — <span class="ok">✓ 10 improved</span>, <span class="bad">✗ 5 regressed</span></span>
+        <span class="line">&nbsp;</span>
+        <span class="line"><span class="label">Quality gates</span></span>
+        <span class="line"><span class="gate">  [</span> <span class="ok">OK</span> <span class="gate">]</span>  success_rate_delta &gt;= −5</span>
+        <span class="line"><span class="gate">  [</span><span class="bad">FAIL</span><span class="gate">]</span>  duration_delta_pct &lt;= 30</span>
+        <span class="sep line">──────────────────────────────────────────────────────────</span>
+        <span class="final-fail line">FAILED — quality gate violation (exit code 1)</span>
+      </div>
     </div>
   </div>
 </section>
 
-<section class="kali-install">
-  <div class="install-chip">
-    <span class="install-prompt">$</span> pip install kalibra
+<!-- ── INSIGHTS / THE STORY ── -->
+<section class="section">
+  <div class="section-h">What just happened</div>
+  <h2>The aggregate looked great. <em>Five tasks completely broke.</em></h2>
+  <div class="insights">
+    <div class="insight good">
+      <div class="num">+25 pp</div>
+      <h3>Dashboard says ship it</h3>
+      <p>Success rate up. Cost down. Every aggregate metric green-lit this deploy.</p>
+    </div>
+    <div class="insight bad">
+      <div class="num">5/5 → 0/5</div>
+      <h3>Five tasks died silently</h3>
+      <p>Per-task breakdown surfaced them. New easy tasks lifted the average and hid the failures.</p>
+    </div>
+    <div class="insight amber">
+      <div class="num">+99%</div>
+      <h3>Quality gate held</h3>
+      <p>duration_delta_pct ≤ 30 violated. PR blocked. Exit code 1. Merge stopped.</p>
+    </div>
   </div>
 </section>
 
-<div class="kali-footer-links">
-  <a href="https://github.com/khan5v/kalibra">GitHub</a>
-  <span class="sep">·</span>
-  <a href="https://pypi.org/project/kalibra/">PyPI</a>
-  <span class="sep">·</span>
-  <a href="https://www.linkedin.com/in/orekhov/">LinkedIn</a>
-  <span class="sep">·</span>
-  <a href="https://orekhov.work">orekhov.work</a>
+<!-- ── HAMEL QUOTE + METHODS ── -->
+<section class="proof" id="methods-section">
+  <div class="proof-inner">
+    <div>
+      <blockquote class="hamel">
+        "Unsuccessful AI products almost always share a common root cause: a failure to create robust evaluation systems."
+      </blockquote>
+      <div class="cite">
+        — <a href="https://hamel.dev/blog/posts/evals/" target="_blank" rel="noopener">Hamel Husain, <em>Your AI Product Needs Evals</em></a>
+      </div>
+    </div>
+    <div class="methods-card">
+      <h4>Statistically transparent</h4>
+      <div class="method-row">
+        <span class="name">Two-proportion z-test</span>
+        <span class="what">success / error rate</span>
+      </div>
+      <div class="method-row">
+        <span class="name">Percentile bootstrap (n=1000)</span>
+        <span class="what">cost / tokens / duration</span>
+      </div>
+      <div class="method-row">
+        <span class="name">Per-task z-test grid</span>
+        <span class="what">finds hidden regressions</span>
+      </div>
+      <div class="method-row">
+        <span class="name">BH FDR correction</span>
+        <span class="what">on the roadmap</span>
+      </div>
+      <div class="method-row">
+        <span class="name">BCa bootstrap</span>
+        <span class="what">on the roadmap</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── AUDIENCE ── -->
+<section class="section">
+  <div class="section-h">Audience</div>
+  <h2>Built for the layer below the eval.</h2>
+  <div class="audience-grid">
+    <div class="audience-col for">
+      <h3>For you if</h3>
+      <li>You run agent evals in CI and want a real regression gate</li>
+      <li>You've been burned by averages hiding regressions</li>
+      <li>You prefer a CLI and a config file over another UI to log into</li>
+      <li>You already use Phoenix, OTel GenAI, Langfuse — and just want to diff two runs</li>
+    </div>
+    <div class="audience-col not">
+      <h3>Reach for something else if</h3>
+      <li>You need to judge whether outputs are <em>correct</em>. Kalibra measures change between two runs, not quality — pair it with an LLM judge or rule-based scorer.</li>
+      <li>You need real-time monitoring or alerts on live traffic. Kalibra is offline: it compares two trace files at a moment in time.</li>
+      <li>You need trace storage, search, or a hosted team UI. Phoenix, Langfuse, Braintrust do this — Kalibra reads what they export.</li>
+    </div>
+  </div>
+</section>
+
+<!-- ── INTEGRATIONS ── -->
+<section class="section" id="integrations-section">
+  <div class="section-h">Reads the trace format you already have</div>
+  <h2>Auto-detected. No field mapping for standard formats.</h2>
+  <div class="integrations">
+    <a class="int-card" href="phoenix/">
+      <span class="badge">openinference.*</span>
+      <h3>Phoenix / OpenInference</h3>
+      <p>Span tree aggregation. Token + cost extraction from LLM spans only.</p>
+    </a>
+    <a class="int-card" href="otel-genai/">
+      <span class="badge">gen_ai.*</span>
+      <h3>OTel GenAI</h3>
+      <p>Validated with opentelemetry-instrumentation-openai-v2. Finish-reason aware.</p>
+    </a>
+    <a class="int-card" href="crewai/">
+      <span class="badge">flat JSONL</span>
+      <h3>CrewAI &amp; custom</h3>
+      <p>One trace per line. Map fields once in <code>kalibra.yml</code>.</p>
+    </a>
+    <a class="int-card" href="getting-started/">
+      <span class="badge">--suggest</span>
+      <h3>Bring your own shape</h3>
+      <p><code>kalibra inspect --suggest</code> reads your data and prints field mappings.</p>
+    </a>
+  </div>
+</section>
+
+<div class="k2-footer">
+  <div class="wrap">
+    <div class="links">
+      <a href="https://github.com/khan5v/kalibra">GitHub</a>
+      <a href="https://pypi.org/project/kalibra/">PyPI</a>
+      <a href="methods/">Methods</a>
+      <a href="getting-started/">Docs</a>
+    </div>
+    <div class="meta">MIT · Python 3.11+ · Two dependencies (click, pyyaml)</div>
+  </div>
+</div>
+
 </div>
 {% endblock %}
 

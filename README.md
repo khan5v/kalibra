@@ -1,6 +1,7 @@
 <p align="center">
   <strong>Kalibra</strong><br>
-  Regression detection and CI quality gates for AI agents.
+  The diff tool for AI agent runs.<br>
+  <em>The CLI that catches what the dashboard misses.</em>
 </p>
 
 <p align="center">
@@ -16,6 +17,9 @@
 
 Success rate: 80% → 80%. Duration: flat. Tokens: flat. Everything looks the same — but 2 task types that always passed started failing, and 2 that always failed started passing. The aggregate hid it. The [per-task breakdown caught it](/blog/kalibra-regression-detection/).
 
+> "Unsuccessful AI products almost always share a common root cause: a failure to create robust evaluation systems."
+> — [Hamel Husain, *Your AI Product Needs Evals*](https://hamel.dev/blog/posts/evals/)
+
 ---
 
 ```bash
@@ -24,7 +28,22 @@ kalibra compare baseline.jsonl current.jsonl -v
 kalibra demo    # try it with sample data
 ```
 
-- **Statistical rigor** — bootstrap 95% CIs on continuous metrics, two-proportion z-test on rates
+## Who this is for
+
+- Teams running agent evals in CI who want a regression gate without adopting a dashboard
+- Anyone who's been burned by averages hiding regressions
+- Developers who prefer a CLI and a config file over another UI to log into
+
+## What it doesn't do
+
+- **Not a tracing backend.** It reads Phoenix, OTel GenAI, Langfuse, and flat JSONL exports.
+- **Not a dashboard.** Output is terminal text, markdown, or JSON.
+- **Not an LLM judge.** No model calls, no API keys, no evaluator prompts.
+- **Doesn't replace Phoenix or Langfuse.** It compares the traces they produce.
+
+## What it does
+
+- **Statistically transparent** — two-proportion z-test on rates, percentile bootstrap (n=1000) on continuous metrics. Every number has a [named method](https://kalibra.cc/methods/) behind it.
 - **Quality gates** — `regressions <= 2` fails your CI pipeline (exit 1) when thresholds are violated
 - **Per-task and per-span breakdown** — catches regressions that cancel out in the aggregate
 - **Two dependencies** — click + pyyaml. No ML frameworks, no API keys, no LLM calls
