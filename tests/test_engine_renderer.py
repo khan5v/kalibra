@@ -457,8 +457,8 @@ class TestJsonRenderer:
         tb = data["metrics"]["trace_breakdown"]
         assert isinstance(tb["metadata"]["regressions"], list)
 
-    def test_json_nan_becomes_null(self):
-        """NaN values in gate actuals should become null."""
+    def test_skipped_gate_actual_is_null(self):
+        """When a gate is skipped (no data), actual must be JSON null, not NaN."""
         random.seed(42)
         baseline = [Trace(trace_id="b")]
         current = [Trace(trace_id="c")]
@@ -468,12 +468,16 @@ class TestJsonRenderer:
             metrics=["success_rate"],
             require=["success_rate >= 50"],
         )
+
+        # Engine-side: actual is None, not NaN.
+        assert result.gates[0].actual is None
+        assert result.gates[0].warning is not None
+
+        # JSON-side: serializes to null.
         output = render(result, "json")
         data = json.loads(output)
-
-        # Gate should have been skipped (no data), actual should be null not NaN
         gate = data["gates"][0]
-        assert gate["actual"] is None or isinstance(gate["actual"], (int, float))
+        assert gate["actual"] is None
 
 
 class TestEdgeCases:

@@ -6,7 +6,6 @@ plus optional breakdown sections and gate results.
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -179,7 +178,7 @@ def render_markdown(result: CompareResult, verbose: bool = False) -> str:
                 icon = "✅ PASS"
             else:
                 icon = "❌ FAIL"
-            actual = f"{g.actual:.2f}" if not math.isnan(g.actual) else "n/a"
+            actual = f"{g.actual:.2f}" if g.actual is not None else "n/a"
             lines.append(f"| `{g.expr}` | {icon} | {actual} |")
         lines.append("")
 

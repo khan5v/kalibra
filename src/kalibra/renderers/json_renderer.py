@@ -7,7 +7,6 @@ is included; no formatting or truncation.
 from __future__ import annotations
 
 import json
-import math
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -40,7 +39,7 @@ def _serialize(result: CompareResult) -> dict:
             {
                 "expr": g.expr,
                 "passed": g.passed,
-                "actual": g.actual if not math.isnan(g.actual) else None,
+                "actual": g.actual,
                 "warning": g.warning,
             }
             for g in result.gates

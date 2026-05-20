@@ -71,10 +71,14 @@ def resolve_metrics(names: list[str] | None = None) -> list[ComparisonMetric]:
 
 @dataclass
 class GateResult:
-    """A single threshold gate evaluation."""
+    """A single threshold gate evaluation.
+
+    ``actual`` is None when the gate was skipped because the metric
+    produced no data for the threshold field.
+    """
     expr: str
     passed: bool
-    actual: float
+    actual: float | None
     warning: str | None = None
 
 
@@ -326,7 +330,7 @@ def _eval_gates(
             gates.append(GateResult(
                 expr=p.raw,
                 passed=True,
-                actual=float("nan"),
+                actual=None,
                 warning=(
                     f"Metric produced no data for {p.field!r}"
                     " — gate skipped"
