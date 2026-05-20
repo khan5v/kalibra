@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from kalibra import KalibraDataWarning
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
 from kalibra.loaders._utils import (
     _flatten_dict,
@@ -183,12 +184,14 @@ class TestGroupSpans:
 
     def test_skips_non_dict_items(self):
         raw = [_span(), "not a dict", 42, None]
-        traces = _group_spans(raw)
+        with pytest.warns(KalibraDataWarning, match="3 not a dict"):
+            traces = _group_spans(raw)
         assert len(traces) == 1
 
     def test_skips_items_without_context(self):
         raw = [_span(), {"no_context": True}]
-        traces = _group_spans(raw)
+        with pytest.warns(KalibraDataWarning, match="missing context"):
+            traces = _group_spans(raw)
         assert len(traces) == 1
 
     def test_skips_items_with_empty_trace_id(self):
@@ -199,7 +202,8 @@ class TestGroupSpans:
                 "span_kind": "LLM",
             },
         ]
-        traces = _group_spans(raw)
+        with pytest.warns(KalibraDataWarning, match="missing context.trace_id"):
+            traces = _group_spans(raw)
         assert len(traces) == 1
 
     def test_spans_sorted_by_start_time(self):

@@ -28,6 +28,7 @@ from kalibra.engine import (
     compare,
     resolve_metrics,
 )
+from kalibra.loaders._utils import KalibraDataWarning
 from kalibra.metrics import ComparisonMetric, Direction, Observation
 from kalibra.model import Span, Trace
 
@@ -48,4 +49,6 @@ __all__ = [
     "Span",
     # Extension point
     "ComparisonMetric",
+    # Warnings
+    "KalibraDataWarning",
 ]

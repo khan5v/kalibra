@@ -8,10 +8,20 @@ from __future__ import annotations
 
 import json
 import math
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
+
+
+class KalibraDataWarning(UserWarning):
+    """Warning emitted when loaders skip or coerce data.
+
+    Users can silence with::
+
+        warnings.filterwarnings("ignore", category=KalibraDataWarning)
+    """
 
 
 _SUCCESS_VALUES = {"success", "true", "1", "pass", "passed", "resolved"}
@@ -102,18 +112,45 @@ def _group_by_trace_id(raw_spans: list[dict]) -> dict[str, list[dict]]:
 
     Skips non-dict items and items without a valid context.trace_id.
     Shared by all OTel-based loaders (OpenInference, OTel GenAI).
+
+    Emits a KalibraDataWarning summarising how many items were dropped
+    and why. Silent drops corrupt downstream metrics with no signal to
+    the user that data was lost.
     """
     groups: dict[str, list[dict]] = {}
+    skipped_non_dict = 0
+    skipped_no_context = 0
+    skipped_no_trace_id = 0
     for item in raw_spans:
         if not isinstance(item, dict):
+            skipped_non_dict += 1
             continue
         context = item.get("context")
         if not isinstance(context, dict):
+            skipped_no_context += 1
             continue
         trace_id = str(context.get("trace_id") or "")
         if not trace_id:
+            skipped_no_trace_id += 1
             continue
         groups.setdefault(trace_id, []).append(item)
+
+    total_skipped = skipped_non_dict + skipped_no_context + skipped_no_trace_id
+    if total_skipped > 0:
+        parts = []
+        if skipped_no_trace_id:
+            parts.append(f"{skipped_no_trace_id} missing context.trace_id")
+        if skipped_no_context:
+            parts.append(f"{skipped_no_context} missing context object")
+        if skipped_non_dict:
+            parts.append(f"{skipped_non_dict} not a dict")
+        warnings.warn(
+            f"Dropped {total_skipped} span(s) while grouping by trace_id "
+            f"({', '.join(parts)}). Check that your data has "
+            "context.trace_id on every span.",
+            KalibraDataWarning,
+            stacklevel=2,
+        )
     return groups
 
 
