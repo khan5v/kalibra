@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from kalibra.loader import load_traces
 from kalibra.loaders.otel_genai import (
     OTelGenAILoader,
@@ -16,7 +14,6 @@ from kalibra.loaders.otel_genai import (
     _to_span,
 )
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

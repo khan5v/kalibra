@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from kalibra import KalibraDataWarning
-from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
 from kalibra.loaders._utils import (
     _flatten_dict,
     _normalize_status,
@@ -23,6 +22,7 @@ from kalibra.loaders.openinference import (
     is_openinference,
     load_openinference_jsonl,
 )
+from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 

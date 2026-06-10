@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from kalibra import display
+
+if TYPE_CHECKING:
+    from kalibra.config import PopulationConfig
 
 
 def _status(msg: str, out_format: str, quiet: bool) -> None:

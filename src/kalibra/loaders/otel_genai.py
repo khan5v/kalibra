@@ -33,7 +33,6 @@ from kalibra.loaders._utils import (
 )
 from kalibra.model import OUTCOME_FAILURE, OUTCOME_SUCCESS, Span, Trace
 
-
 # ── Finish reason mapping ────────────────────────────────────────────────────
 # gen_ai.response.finish_reasons is an array of strings.
 # The OTel spec normalises provider values, but instrumentation libraries

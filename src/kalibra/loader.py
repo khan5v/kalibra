@@ -18,7 +18,6 @@ from kalibra.loaders._utils import (
 from kalibra.loaders.flat import _load_flat_jsonl
 from kalibra.model import Trace
 
-
 # ── Format registry ──────────────────────────────────────────────────────────
 
 _ALL_FORMATS = None
@@ -34,9 +33,9 @@ def _get_loaders():
     """
     global _ALL_FORMATS, _FORMAT_MAP
     if _ALL_FORMATS is None:
+        from kalibra.loaders.flat import FlatLoader
         from kalibra.loaders.openinference import OpenInferenceLoader
         from kalibra.loaders.otel_genai import OTelGenAILoader
-        from kalibra.loaders.flat import FlatLoader
         # Detection order: OpenInference first (strongest signals), then OTel GenAI.
         _ALL_FORMATS = [OpenInferenceLoader(), OTelGenAILoader()]
         _FORMAT_MAP = {f.name: f for f in _ALL_FORMATS}

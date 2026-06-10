@@ -10,9 +10,8 @@ from click.testing import CliRunner
 
 from kalibra.cli import main
 from kalibra.commands.compare import _resolve_where_field
-from kalibra.config import Matcher, PopulationConfig, CompareConfig, parse_matcher
+from kalibra.config import CompareConfig, Matcher, PopulationConfig, parse_matcher
 from kalibra.model import Span, Trace
-
 
 # ── Matcher parsing ──────────────────────────────────────────────────────────
 

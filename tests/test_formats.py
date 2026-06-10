@@ -9,10 +9,9 @@ import yaml
 from click.testing import CliRunner
 
 from kalibra.cli import main
-from kalibra.loaders import TraceLoader
-from kalibra.loaders.openinference import OpenInferenceLoader
-from kalibra.loaders.flat import FlatLoader
 from kalibra.loader import load_traces
+from kalibra.loaders.flat import FlatLoader
+from kalibra.loaders.openinference import OpenInferenceLoader
 
 
 class TestFormatClasses:
