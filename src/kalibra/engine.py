@@ -50,6 +50,10 @@ DEFAULT_METRIC_NAMES = [
     "trace_breakdown", "span_breakdown",
 ]
 
+# Threshold fields carrying a significance-tested delta. Gates on these
+# fields are skipped when the metric could not support a verdict.
+_DELTA_SUFFIXES = ("_delta", "_delta_pct", "_delta_pp")
+
 
 def resolve_metrics(names: list[str] | None = None) -> list[ComparisonMetric]:
     """Instantiate metrics by name. None means all defaults, [] means none."""
@@ -152,13 +156,30 @@ def compare(
             "confidence intervals are asymmetric; treat deltas with caution"
         )
 
+    # Multiple-testing disclosure: each significance-gated threshold is
+    # tested at α=0.05, so with k gates the chance that at least one fails
+    # by chance alone approaches 1 - 0.95^k under no real change.
+    delta_gate_count = sum(
+        1 for p in parsed_exprs if p.field.endswith(_DELTA_SUFFIXES)
+    )
+    if delta_gate_count >= 3:
+        familywise_pct = (1 - 0.95 ** delta_gate_count) * 100
+        warnings.append(
+            f"{delta_gate_count} significance-gated thresholds, each tested at "
+            f"α=0.05 — even with no real change, up to ~{familywise_pct:.0f}% of "
+            "runs may fail at least one gate by chance "
+            "(multiple-test correction is on the roadmap)"
+        )
+
     # Run metrics.
     observations: dict[str, Observation] = {}
     threshold_values: dict[str, float] = {}
-    # Fields to skip in gate evaluation — the metric's direction was
-    # SAME (CI includes zero or delta below noise), so the point
-    # estimate is unreliable for gating.
-    inconclusive_fields: set[str] = set()
+    # Delta fields to skip in gate evaluation, mapped to the reason shown
+    # on the skipped gate. SAME means the change is not significant or
+    # below noise; INCONCLUSIVE means significance could not be assessed
+    # (e.g. no confidence interval). Either way the point estimate alone
+    # must not fail a gate.
+    gate_skip_reasons: dict[str, str] = {}
 
     for m in active:
         noise = noise_thresholds.get(m.name)
@@ -172,14 +193,22 @@ def compare(
         fields = m.threshold_fields(obs)
         threshold_values.update(fields)
 
-        # If direction is SAME, mark delta fields as inconclusive.
-        if obs.direction == Direction.SAME and obs.delta is not None:
+        if obs.delta is not None and obs.direction in (
+            Direction.SAME, Direction.INCONCLUSIVE,
+        ):
+            if obs.direction == Direction.SAME:
+                reason = "Change is not statistically significant — gate skipped"
+            else:
+                reason = (
+                    "Significance could not be assessed"
+                    " (no confidence interval) — gate skipped"
+                )
             for field_name in fields:
-                if field_name.endswith(("_delta", "_delta_pct", "_delta_pp")):
-                    inconclusive_fields.add(field_name)
+                if field_name.endswith(_DELTA_SUFFIXES):
+                    gate_skip_reasons[field_name] = reason
 
     # Evaluate gates.
-    gates = _eval_gates(threshold_values, parsed_exprs, inconclusive_fields)
+    gates = _eval_gates(threshold_values, parsed_exprs, gate_skip_reasons)
 
     return CompareResult(
         direction=_rollup_direction(observations),
@@ -321,9 +350,9 @@ def _validate_require(
 def _eval_gates(
     values: dict[str, float],
     parsed_exprs: list[_ParsedExpr],
-    inconclusive_fields: set[str] | None = None,
+    skip_reasons: dict[str, str] | None = None,
 ) -> list[GateResult]:
-    inconclusive_fields = inconclusive_fields or set()
+    skip_reasons = skip_reasons or {}
     gates = []
     for p in parsed_exprs:
         if p.field not in values:
@@ -337,15 +366,12 @@ def _eval_gates(
                 ),
             ))
             continue
-        if p.field in inconclusive_fields:
+        if p.field in skip_reasons:
             gates.append(GateResult(
                 expr=p.raw,
                 passed=True,
                 actual=round(values[p.field], 4),
-                warning=(
-                    "Change is not statistically significant"
-                    " — gate skipped"
-                ),
+                warning=skip_reasons[p.field],
             ))
             continue
         actual = values[p.field]

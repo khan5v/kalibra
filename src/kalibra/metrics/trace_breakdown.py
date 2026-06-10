@@ -28,8 +28,14 @@ class TraceBreakdownMetric(ComparisonMetric):
     noise_threshold = 0.0  # per-task regressions are always significant
     higher_is_better = True
     _fields = {
-        "regressions": "Number of tasks that regressed",
-        "improvements": "Number of tasks that improved",
+        "regressions": (
+            "Number of tasks that regressed"
+            " (informational — no significance test)"
+        ),
+        "improvements": (
+            "Number of tasks that improved"
+            " (informational — no significance test)"
+        ),
     }
 
     # Set by the engine from config before compare() is called.

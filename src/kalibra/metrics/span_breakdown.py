@@ -39,8 +39,14 @@ class SpanBreakdownMetric(ComparisonMetric):
     noise_threshold = 5.0  # % — looser for per-span comparisons with smaller samples
     higher_is_better = True
     _fields = {
-        "span_regressions": "Number of span names that regressed",
-        "span_improvements": "Number of span names that improved",
+        "span_regressions": (
+            "Number of span names that regressed"
+            " (informational — per-dimension tests only)"
+        ),
+        "span_improvements": (
+            "Number of span names that improved"
+            " (informational — per-dimension tests only)"
+        ),
     }
 
     def compare(
@@ -91,9 +97,12 @@ class SpanBreakdownMetric(ComparisonMetric):
             threshold = self.noise_threshold
 
             # Check each dimension independently, matching _classify logic:
-            # 1. If CI includes zero → not significant → skip this dimension.
-            # 2. If abs(delta) <= noise threshold → too small to matter → skip.
-            # 3. Otherwise → regressed (delta > 0) or improved (delta < 0).
+            # 1. If the CI could not be computed → significance cannot be
+            #    assessed → skip this dimension (never classify on the
+            #    point estimate alone).
+            # 2. If CI includes zero → not significant → skip this dimension.
+            # 3. If abs(delta) <= noise threshold → too small to matter → skip.
+            # 4. Otherwise → regressed (delta > 0) or improved (delta < 0).
             # Lower is better for all dimensions (duration, cost, tokens).
             has_regression = False
             has_improvement = False
@@ -103,7 +112,9 @@ class SpanBreakdownMetric(ComparisonMetric):
                 (cost_delta or 0, cost_ci),
                 (tok_delta or 0, tok_ci),
             ]:
-                if ci is not None and ci[0] <= 0 <= ci[1]:
+                if ci is None:
+                    continue  # CI unavailable — cannot assess significance
+                if ci[0] <= 0 <= ci[1]:
                     continue  # CI includes zero — not significant
                 if abs(delta) <= threshold:
                     continue  # Below noise threshold

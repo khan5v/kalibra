@@ -67,7 +67,7 @@ class StepsMetric(ComparisonMetric):
         return Observation(
             name=self.name,
             description=self.description,
-            direction=self._classify(delta, ci),
+            direction=self._classify(delta, ci, require_ci=True),
             delta=delta,
             baseline={
                 "median": b_med,

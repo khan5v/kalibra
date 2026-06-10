@@ -749,6 +749,70 @@ class TestEdgeCases:
         assert gate.warning is None  # Not skipped
         assert gate.passed is True  # total < 1.0
 
+    def test_gate_skipped_when_ci_unavailable(self):
+        """With one trace per side no CI can be computed — the direction
+        is INCONCLUSIVE and delta gates are skipped rather than evaluated
+        against the unverifiable point estimate.
+
+        The gate threshold is set to something the point estimate would
+        FAIL (10x cost increase), proving the skip prevented a false failure.
+        """
+        baseline = [Trace(trace_id="b-0", _cost=0.05, outcome=OUTCOME_SUCCESS)]
+        current = [Trace(trace_id="c-0", _cost=0.50, outcome=OUTCOME_SUCCESS)]
+
+        result = compare(
+            baseline, current,
+            metrics=["cost"],
+            require=["cost_delta_pct <= 50"],
+        )
+
+        cost_obs = result.observations["cost"]
+        assert cost_obs.direction == Direction.INCONCLUSIVE
+
+        gate = result.gates[0]
+        assert gate.passed is True
+        assert gate.warning is not None
+        assert "could not be assessed" in gate.warning
+
+    def test_multi_gate_warning_lists_familywise_rate(self):
+        """Three or more delta gates trigger the multiple-testing
+        disclosure warning with the familywise false-flag rate."""
+        random.seed(42)
+        baseline = _build_populations(50, 0.8, "baseline")
+        current = _build_populations(50, 0.8, "current")
+
+        result = compare(
+            baseline, current,
+            require=[
+                "cost_delta_pct <= 50",
+                "duration_delta_pct <= 50",
+                "token_delta_pct <= 50",
+            ],
+        )
+
+        multi = [w for w in result.warnings if "significance-gated" in w]
+        assert len(multi) == 1
+        assert "~14%" in multi[0]  # 1 - 0.95^3 ≈ 14%
+
+    def test_no_multi_gate_warning_below_three_delta_gates(self):
+        """Two delta gates plus absolute-field gates stay below the
+        disclosure threshold — absolute fields are not significance-tested."""
+        random.seed(42)
+        baseline = _build_populations(50, 0.8, "baseline")
+        current = _build_populations(50, 0.8, "current")
+
+        result = compare(
+            baseline, current,
+            require=[
+                "cost_delta_pct <= 999",
+                "duration_delta_pct <= 999",
+                "total_cost <= 999",
+                "success_rate >= 0",
+            ],
+        )
+
+        assert not any("significance-gated" in w for w in result.warnings)
+
     def test_all_renderers_no_crash(self):
         """All three renderers should handle any CompareResult without crashing."""
         random.seed(42)

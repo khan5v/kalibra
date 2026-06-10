@@ -97,6 +97,8 @@ class ComparisonMetric(ABC):
         self,
         delta: float | None,
         ci: tuple[float, float] | None = None,
+        *,
+        require_ci: bool = False,
     ) -> Direction:
         """Classify direction from delta and optional bootstrap CI.
 
@@ -105,11 +107,18 @@ class ComparisonMetric(ABC):
         point estimate is large. This directly tests "did the median shift?"
         which is the claim we're making.
 
+        require_ci: set by metrics whose significance comes from the CI.
+        When the CI could not be computed (fewer than 2 values per side, or
+        too many undefined resamples), the point estimate alone cannot
+        support a verdict — INCONCLUSIVE, never a gate-triggering direction.
+
         Noise threshold: if the delta is real but trivially small (e.g. 0.3%
         cost change), classify as SAME regardless of significance.
         """
         if delta is None:
             return Direction.NA
+        if require_ci and ci is None:
+            return Direction.INCONCLUSIVE
         if ci is not None and ci[0] <= 0 <= ci[1]:
             return Direction.SAME
         if abs(delta) <= self.noise_threshold:

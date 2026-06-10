@@ -42,6 +42,10 @@ A continuous metric counts as **upgrade** or **regression** when **both** condit
 
 If the CI includes zero, the change is not statistically distinguishable from noise → **unchanged**. If the delta is statistically real but smaller than the noise floor, it is practically negligible → **unchanged**. Sign and `higher_is_better` decide upgrade vs regression.
 
+If no CI could be computed at all (fewer than 2 values per side, or the CI was suppressed — see bootstrap limits below), significance cannot be assessed and the metric is classified **mixed** (inconclusive). Kalibra never falls back to classifying on the bare point estimate.
+
+**Gate evaluation follows the classification.** A threshold gate on a delta field (`*_delta`, `*_delta_pct`, `*_delta_pp`) is only evaluated when the metric reached a verdict. When the change is not significant (**unchanged**) or significance could not be assessed (**mixed**), the gate is skipped with an explicit warning rather than evaluated against an unverified point estimate. Gates on absolute fields (`success_rate`, `total_cost`, …) are budget checks, not significance tests — they always evaluate.
+
 For proportion metrics (`success_rate`, `error_rate`), the same two-condition logic applies with p < 0.05 in place of the CI check and a percentage-point noise floor in place of the percentage floor.
 
 ## Success rate, error rate, and other proportions
@@ -59,7 +63,7 @@ The p-value is two-sided, computed from the standard normal via `erfc(|z|/√2)`
 
 - Small samples (n < 30 per arm) make the normal approximation unreliable. Kalibra still reports the result but emits a low-sample warning.
 - No Wald confidence interval on the proportion delta is reported today — only the point estimate and p-value.
-- No multiple-testing correction across metrics. Running 8 gates at α = 0.05 inflates the family-wise false positive rate.
+- No multiple-testing correction across metrics. Running 8 gates at α = 0.05 inflates the family-wise false positive rate. Kalibra discloses this at run time: with 3 or more significance-gated thresholds configured, a warning reports the family-wise upper bound (1 − 0.95^k) on at least one spurious gate failure.
 
 ## Cost, tokens, duration, and other continuous metrics
 
@@ -73,7 +77,7 @@ The bootstrap is seeded (`random.Random(42)`) so output is reproducible across r
 
 - 1,000 resamples is fixed. Monte Carlo error on the 95% bounds is roughly ±0.5%.
 - The percentile bootstrap is biased for skewed distributions.
-- When >20% of resamples produce an undefined percentage change (baseline resampled median = 0), the CI is suppressed rather than reported on a biased remainder. This typically fires when baseline cost is mostly zero — e.g. a free local model compared against a paid API.
+- When >20% of resamples produce an undefined percentage change (baseline resampled median = 0), the CI is suppressed rather than reported on a biased remainder. This typically fires when baseline cost is mostly zero — e.g. a free local model compared against a paid API. With no CI the metric is classified mixed (inconclusive) and its delta gates are skipped.
 - The seed is hard-coded.
 - No power analysis or minimum detectable effect (MDE) yet.
 

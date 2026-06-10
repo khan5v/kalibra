@@ -66,7 +66,7 @@ class CostQualityMetric(ComparisonMetric):
         return Observation(
             name=self.name,
             description=self.description,
-            direction=self._classify(delta, ci),
+            direction=self._classify(delta, ci, require_ci=True),
             delta=delta,
             baseline={
                 "cost_per_success": b_med,
