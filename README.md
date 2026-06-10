@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://pypi.org/project/kalibra/"><img src="https://img.shields.io/pypi/v/kalibra" alt="PyPI"></a>
   <a href="https://pypi.org/project/kalibra/"><img src="https://img.shields.io/pypi/pyversions/kalibra" alt="Python"></a>
-  <a href="https://github.com/khan5v/kalibra/LICENSE"><img src="https://img.shields.io/github/license/khan5v/kalibra" alt="License"></a>
+  <a href="https://github.com/khan5v/kalibra/blob/main/LICENSE"><img src="https://img.shields.io/github/license/khan5v/kalibra" alt="License"></a>
   <a href="https://kalibra.cc"><img src="https://img.shields.io/badge/docs-kalibra.cc-blue" alt="Docs"></a>
 </p>
 
@@ -15,7 +15,7 @@
   <img src="docs/assets/readme-demo.png" alt="Kalibra catching a hidden regression — success rate flat at 80%, but 2 task types regressed" width="700">
 </p>
 
-Success rate: 80% → 80%. Duration: flat. Tokens: flat. Everything looks the same — but 2 task types that always passed started failing, and 2 that always failed started passing. The aggregate hid it. The [per-task breakdown caught it](/blog/kalibra-regression-detection/).
+Success rate: 80% → 80%. Duration: flat. Tokens: flat. Everything looks the same — but 2 task types that always passed started failing, and 2 that always failed started passing. The aggregate hid it. The [per-task breakdown caught it](examples/crewai/).
 
 > "Unsuccessful AI products almost always share a common root cause: a failure to create robust evaluation systems."
 > — [Hamel Husain, *Your AI Product Needs Evals*](https://hamel.dev/blog/posts/evals/)
@@ -44,7 +44,7 @@ kalibra demo    # try it with sample data
 ## What it does
 
 - **Statistically transparent** — two-proportion z-test on rates, percentile bootstrap (n=1000) on continuous metrics. Every number has a [named method](https://kalibra.cc/methods/) behind it.
-- **Quality gates** — `regressions <= 2` fails your CI pipeline (exit 1) when thresholds are violated
+- **Significance-gated thresholds** — `success_rate_delta >= -2` fails your CI pipeline (exit 1) only when the change is statistically significant; insignificant deltas skip the gate instead of failing it
 - **Per-task and per-span breakdown** — catches regressions that cancel out in the aggregate
 - **Two dependencies** — click + pyyaml. No ML frameworks, no API keys, no LLM calls
 
